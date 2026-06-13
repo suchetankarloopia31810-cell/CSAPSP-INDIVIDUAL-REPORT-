@@ -1,826 +1,884 @@
 """
-Generates the CSAPSP Individual Report as a .docx file.
-Run:  python3 build_report.py
+Generates CSAPSP_Individual_Report.docx
+Topic : Hospital Emergency Department Patient Triage Management System
+Run   : python3 build_report.py
 """
 
+import os
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_ALIGN_VERTICAL
+from docx.shared import Pt, Inches, RGBColor, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-import copy
 
-# ── helpers ────────────────────────────────────────────────────────────────
 
-def add_heading(doc, text, level=1):
-    p = doc.add_heading(text, level=level)
-    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+# ════════════════════════════════════════════════════════════════════════════
+#  STYLE HELPERS
+# ════════════════════════════════════════════════════════════════════════════
+
+def _shading(cell, hex_fill):
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"),   "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"),  hex_fill)
+    tc_pr.append(shd)
+
+
+def _cell_font(cell, size=10, bold=False, color_hex=None):
+    for para in cell.paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        para.paragraph_format.space_before = Pt(2)
+        para.paragraph_format.space_after  = Pt(2)
+        for run in para.runs:
+            run.font.size = Pt(size)
+            run.bold = bold
+            if color_hex:
+                r, g, b = (int(color_hex[i:i+2], 16) for i in (0, 2, 4))
+                run.font.color.rgb = RGBColor(r, g, b)
+
+
+def style_header_row(row, fill="1B3A5C"):
+    for cell in row.cells:
+        _shading(cell, fill)
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        _cell_font(cell, size=10, bold=True, color_hex="FFFFFF")
+
+
+def style_data_row(row, fill="FFFFFF"):
+    for cell in row.cells:
+        _shading(cell, fill)
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        _cell_font(cell, size=10, bold=False)
+
+
+def add_table(doc, headers, rows_data, caption):
+    """Build a styled table with dark header and alternating rows."""
+    tbl = doc.add_table(rows=1 + len(rows_data), cols=len(headers))
+    tbl.style = "Table Grid"
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    # header row
+    for i, h in enumerate(headers):
+        tbl.rows[0].cells[i].text = h
+    style_header_row(tbl.rows[0])
+
+    # data rows
+    for ri, row_data in enumerate(rows_data, start=1):
+        for ci, val in enumerate(row_data):
+            tbl.rows[ri].cells[ci].text = val
+        fill = "EBF5FB" if ri % 2 == 0 else "FFFFFF"
+        style_data_row(tbl.rows[ri], fill)
+
+    # caption
+    cp = doc.add_paragraph(caption)
+    cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cp.paragraph_format.space_before = Pt(3)
+    cp.paragraph_format.space_after  = Pt(10)
+    for run in cp.runs:
+        run.bold = True
+        run.font.size = Pt(10)
+    return tbl
+
+
+def para(doc, text, size=11, bold=False, italic=False,
+         align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+         space_before=0, space_after=6, left_indent=None, first_indent=None):
+    p = doc.add_paragraph()
+    p.alignment = align
+    p.paragraph_format.space_before = Pt(space_before)
+    p.paragraph_format.space_after  = Pt(space_after)
+    if left_indent  is not None: p.paragraph_format.left_indent        = left_indent
+    if first_indent is not None: p.paragraph_format.first_line_indent  = first_indent
+    r = p.add_run(text)
+    r.font.size  = Pt(size)
+    r.bold       = bold
+    r.italic     = italic
     return p
 
-def add_para(doc, text, bold=False, italic=False, size=11):
-    p = doc.add_paragraph()
-    run = p.add_run(text)
-    run.bold   = bold
-    run.italic = italic
-    run.font.size = Pt(size)
-    p.paragraph_format.space_after  = Pt(6)
-    p.paragraph_format.space_before = Pt(0)
-    return p
 
-def add_code_block(doc, code):
-    """Add a styled monospace code block."""
+def code_block(doc, text):
     p = doc.add_paragraph()
-    run = p.add_run(code)
-    run.font.name = 'Courier New'
-    run.font.size = Pt(8.5)
-    p.paragraph_format.space_after  = Pt(4)
     p.paragraph_format.space_before = Pt(4)
-    # light grey shading
+    p.paragraph_format.space_after  = Pt(4)
+    r = p.add_run(text)
+    r.font.name = "Courier New"
+    r.font.size = Pt(8.5)
     pPr = p._p.get_or_add_pPr()
-    shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'),   'clear')
-    shd.set(qn('w:color'), 'auto')
-    shd.set(qn('w:fill'),  'F2F2F2')
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"),   "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"),  "F4F6F7")
     pPr.append(shd)
     return p
 
-def add_caption(doc, text):
-    p = doc.add_paragraph(text)
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.runs[0]
-    run.bold      = True
-    run.font.size = Pt(10)
-    p.paragraph_format.space_after  = Pt(8)
-    p.paragraph_format.space_before = Pt(2)
+
+def heading(doc, text, level=1):
+    h = doc.add_heading(text, level=level)
+    h.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    for run in h.runs:
+        run.font.color.rgb = RGBColor(0x1B, 0x3A, 0x5C)
+    return h
+
+
+def figure_caption(doc, text):
+    cp = doc.add_paragraph(text)
+    cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cp.paragraph_format.space_before = Pt(3)
+    cp.paragraph_format.space_after  = Pt(12)
+    for run in cp.runs:
+        run.bold = True
+        run.font.size = Pt(10)
+    return cp
+
+
+def reference_entry(doc, text):
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p.paragraph_format.left_indent       = Inches(0.40)
+    p.paragraph_format.first_line_indent = Inches(-0.40)
+    p.paragraph_format.space_after       = Pt(5)
+    r = p.add_run(text)
+    r.font.size = Pt(10.5)
     return p
 
-def style_table_header(row):
-    for cell in row.cells:
-        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-        for para in cell.paragraphs:
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in para.runs:
-                run.bold = True
-                run.font.size = Pt(10)
-        # dark fill
-        tc_pr = cell._tc.get_or_add_tcPr()
-        shd   = OxmlElement('w:shd')
-        shd.set(qn('w:val'),   'clear')
-        shd.set(qn('w:color'), 'auto')
-        shd.set(qn('w:fill'),  '2E4057')
-        tc_pr.append(shd)
-        for para in cell.paragraphs:
-            for run in para.runs:
-                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
-def style_table_row(row, fill='FFFFFF'):
-    for cell in row.cells:
-        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-        for para in cell.paragraphs:
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in para.runs:
-                run.font.size = Pt(10)
-        tc_pr = cell._tc.get_or_add_tcPr()
-        shd   = OxmlElement('w:shd')
-        shd.set(qn('w:val'),   'clear')
-        shd.set(qn('w:color'), 'auto')
-        shd.set(qn('w:fill'),  fill)
-        tc_pr.append(shd)
-
-# ── document ───────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+#  BUILD DOCUMENT
+# ════════════════════════════════════════════════════════════════════════════
 
 doc = Document()
 
-# page margins
-for section in doc.sections:
-    section.top_margin    = Inches(1)
-    section.bottom_margin = Inches(1)
-    section.left_margin   = Inches(1.2)
-    section.right_margin  = Inches(1.2)
+# ── page setup ───────────────────────────────────────────────────────────────
+for sec in doc.sections:
+    sec.top_margin    = Inches(1.0)
+    sec.bottom_margin = Inches(1.0)
+    sec.left_margin   = Inches(1.2)
+    sec.right_margin  = Inches(1.2)
 
-# default font
-style = doc.styles['Normal']
-style.font.name = 'Calibri'
-style.font.size = Pt(11)
+# ── default style ────────────────────────────────────────────────────────────
+norm = doc.styles["Normal"]
+norm.font.name = "Calibri"
+norm.font.size = Pt(11)
 
-# ══════════════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════════════════
 #  COVER PAGE
-# ══════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
 
-doc.add_paragraph()   # top spacer
-
-def centre_bold(doc, text, size=12):
+def cover_line(text, size=12, bold=True, space_after=6):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run(text)
-    run.bold = True
-    run.font.size = Pt(size)
+    p.paragraph_format.space_after = Pt(space_after)
+    r = p.add_run(text)
+    r.font.size = Pt(size)
+    r.bold = bold
     return p
 
-centre_bold(doc, 'MODULE: ALGORITHMS AND PROBLEM-SOLVING USING PYTHON', 13)
 doc.add_paragraph()
-centre_bold(doc, 'TITLE:', 11)
-centre_bold(doc,
-    'SORTING ALGORITHM SELECTION FOR A LIBRARY MANAGEMENT SYSTEM:\n'
-    'A PYTHON-BASED ANALYSIS AND IMPLEMENTATION', 13)
-doc.add_paragraph()
-centre_bold(doc, 'NAME:', 11)
-centre_bold(doc, 'ID:', 11)
-centre_bold(doc, 'WORD COUNT: 2,064', 11)
-doc.add_paragraph()
+cover_line("DEGREE: Computer Science and Digitisation", 11, False)
+cover_line("Module: Algorithms and Problem Solving using Python", 12, True, 12)
+
+# horizontal rule
+hr = doc.add_paragraph()
+hr.paragraph_format.space_after  = Pt(4)
+hr.paragraph_format.space_before = Pt(4)
+hr_run = hr.add_run("─" * 78)
+hr_run.font.size = Pt(8)
+
+cover_line("Assignment Title:", 11, False, 2)
+cover_line(
+    "Prioritising Lives: A Python-Based Sorting Algorithm Analysis\n"
+    "for Hospital Emergency Department Patient Triage Management",
+    13, True, 14)
+
+cover_line("Assignment Type: Individual Report", 11, False, 2)
+cover_line("Word Limit: 2000 words (±200)",     11, False, 2)
+cover_line("Weighting: 50%",                    11, False, 2)
+cover_line("Issue Date: 28/04/2026",            11, False, 2)
+cover_line("Submission Date: 15/06/2026",       11, False, 2)
+cover_line("Feedback Date: 29/06/2026",         11, False, 2)
+cover_line("Issued by: Dr. Syed Arslan Abbas Rizvi", 11, False, 14)
+
+hr2 = doc.add_paragraph()
+hr2.paragraph_format.space_after  = Pt(4)
+hr2_run = hr2.add_run("─" * 78)
+hr2_run.font.size = Pt(8)
+
+cover_line("NAME:",       11, False, 4)
+cover_line("ID:",         11, False, 4)
+cover_line("WORD COUNT:  2,053", 11, False, 4)
 
 doc.add_page_break()
 
-# ══════════════════════════════════════════════════════════════════════════
-#  1. INTRODUCTION
-# ══════════════════════════════════════════════════════════════════════════
 
-add_heading(doc, '1. Introduction')
+# ════════════════════════════════════════════════════════════════════════════
+#  PLAGIARISM & LEARNER DECLARATION  (matching BSBI template page 2)
+# ════════════════════════════════════════════════════════════════════════════
 
-add_para(doc,
-    'Algorithms are a cornerstone of computer science, providing systematic, '
-    'step-by-step procedures for solving computational problems. The selection '
-    'of an appropriate algorithm has a direct bearing on program efficiency, '
-    'dictating how rapidly a system responds and how much memory it consumes '
-    '(Cormen et al., 2022). As data volumes continue to grow in modern '
-    'information systems, the ability to choose and justify the right '
-    'algorithm becomes an increasingly vital skill for software developers.')
+heading(doc, "Plagiarism Notice", level=2)
+para(doc,
+    "When submitting work for assessment, students should be aware of the "
+    "InterActive/Canvas guidance and regulations concerning plagiarism. All "
+    "submissions should be your own, original work. You must submit an "
+    "electronic copy of your work. Your submission will be electronically "
+    "checked.", size=10)
 
-add_para(doc,
-    'Sorting algorithms, in particular, underpin a wide range of data '
-    'processing tasks. Ordered data facilitates faster searching, cleaner '
-    'reporting and more reliable decision-making. The computational cost of '
-    'different sorting strategies can vary enormously: an algorithm that '
-    'handles fifty records in microseconds may take several minutes on ten '
-    'thousand records if its complexity is quadratic (Wibowo and Faisal, 2024). '
-    'Understanding the trade-offs between simplicity, speed and memory '
-    'consumption is therefore essential when designing production systems.')
+heading(doc, "Harvard Referencing", level=2)
+para(doc,
+    "The Harvard Referencing System must be used. Wikipedia, UKEssays.com or "
+    "similar websites must not be used or referenced in your work.", size=10)
 
-add_para(doc,
-    'This report addresses a real-world scenario drawn from library management. '
-    'A library system maintains borrowing records comprising a borrower\'s name '
-    'and the number of days an item has been held. These records must be sorted '
-    'in ascending order of days to produce an overdue report, and the system '
-    'must scale from small daily logs of roughly ten to fifty records to monthly '
-    'exports containing ten thousand or more entries (Lafore, Broder and Canning, '
-    '2022). The challenge is to select an algorithm that performs consistently '
-    'well across both extremes.')
-
-add_para(doc,
-    'The objective of this project is to implement and compare four classical '
-    'sorting algorithms in Python — Bubble Sort, Insertion Sort, Merge Sort and '
-    'Quick Sort — using empirical measurements of execution time and operation '
-    'counts to justify the final algorithm selection. A custom operation counter '
-    'tracks comparisons, swaps and arithmetic steps, enabling a thorough analysis '
-    'of theoretical Big-O complexity against measured behaviour (Shabbir et al., 2023).')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  2. PROBLEM ANALYSIS AND REQUIREMENTS
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '2. Problem Analysis and Requirements')
-
-add_para(doc,
-    'The library dataset consists of plain-text records in which each entry '
-    'pairs a borrower\'s name with the number of days that item has been on loan. '
-    'The assignment brief supplies the following seven-record sample dataset:')
-
-sample_tbl = doc.add_table(rows=8, cols=2)
-sample_tbl.style = 'Table Grid'
-headers = ['Borrower\'s Name', 'Days Since Issue']
-for i, h in enumerate(headers):
-    cell = sample_tbl.rows[0].cells[i]
-    cell.text = h
-style_table_header(sample_tbl.rows[0])
-
-rows_data = [
-    ('Emma', '23'), ('Liam', '5'), ('Sophia', '31'),
-    ('Mason', '14'), ('Olivia', '7'), ('Noah', '42'), ('Ava', '18'),
+# Learner declaration table
+decl_tbl = doc.add_table(rows=4, cols=2)
+decl_tbl.style = "Table Grid"
+decl_data = [
+    ("Word count", ""),
+    ("Use of proof-reader/proof-reading service\n(e.g. Grammarly, Studiosity)", "YES   /   NO"),
+    ("I confirm that I submit this work as my own work and that I have cited "
+     "all sources I have used, and I understand that using sources without "
+     "citing them correctly may be considered Academic Misconduct.", "YES   /   NO"),
+    ("I confirm that I have followed guidance on the acceptable use of AI "
+     "tools for this assignment where such guidance has been issued by my "
+     "tutors.", "YES   /   NO"),
 ]
-for idx, (name, days) in enumerate(rows_data, start=1):
-    sample_tbl.rows[idx].cells[0].text = name
-    sample_tbl.rows[idx].cells[1].text = days
-    fill = 'EAF4FB' if idx % 2 == 0 else 'FFFFFF'
-    style_table_row(sample_tbl.rows[idx], fill)
-
-add_caption(doc, 'Table 0: Assignment Sample Dataset')
-
-add_para(doc,
-    'The primary functional requirement is to sort these records in ascending '
-    'order of days so that the borrower who has held an item for the fewest days '
-    'appears first. Secondary requirements include identifying overdue borrowers '
-    '(those exceeding fourteen days), reporting the total number of records '
-    'processed, measuring execution time in milliseconds, and counting the total '
-    'computational operations performed (Das, 2025).')
-
-add_para(doc,
-    'Input data contains two distinct fields: the borrower\'s name, stored as a '
-    'string, and the number of days on loan, stored as an integer. The system '
-    'must accept a text file of records or, for testing purposes, a synthetically '
-    'generated dataset. Non-functional requirements demand that the solution scale '
-    'to at least ten thousand records without a prohibitive degradation in '
-    'performance, making algorithm complexity a critical selection criterion.')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  3. DATA STRUCTURES AND DATA TYPES SELECTION
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '3. Data Structures and Data Types Selection')
-
-add_para(doc,
-    'Selecting the correct data structure is as important as selecting the '
-    'correct algorithm; together they determine memory usage, access patterns '
-    'and overall system performance (Fatima, 2023). This project uses Python\'s '
-    'native data types and a composite structure to represent borrowing records.')
-
-add_para(doc,
-    'Each borrower\'s name is represented as a Python string, which supports '
-    'the full range of character comparisons required for display and output. '
-    'The loan duration is stored as a Python integer, enabling numeric '
-    'comparisons that drive the sort key. Together, each record is encapsulated '
-    'in a dictionary with two keys — "name" and "days" — providing named access '
-    'to each field without the positional ambiguity of a plain tuple.')
-
-add_para(doc,
-    'The overall dataset is stored as a Python list of these dictionaries, '
-    'for example:')
-
-add_code_block(doc,
-    'records = [\n'
-    '    {"name": "Emma",   "days": 23},\n'
-    '    {"name": "Liam",   "days":  5},\n'
-    '    {"name": "Sophia", "days": 31},\n'
-    ']')
-
-add_para(doc,
-    'A list is the optimal top-level container because it supports zero-based '
-    'indexing, random access and in-place modification — all properties that '
-    'sorting algorithms depend on heavily. Python lists are dynamic, so the '
-    'same code handles both the seven-record sample and a ten-thousand-record '
-    'export without modification (Lafore, Broder and Canning, 2022).')
-
-add_para(doc,
-    'Alternative data structures were evaluated but rejected. A stack operates '
-    'on a Last-In-First-Out (LIFO) basis, which suits tasks such as undo '
-    'operations or depth-first traversal, but offers no natural ordering '
-    'property and cannot be sorted efficiently. A queue follows First-In-First-Out '
-    '(FIFO) semantics, which is appropriate for task scheduling or request '
-    'management, but similarly does not support the random-access patterns '
-    'required by comparison-based sorting.')
-
-add_para(doc,
-    'A Binary Search Tree (BST) maintains elements in sorted order and can '
-    'answer range queries in O(log n) time; however, constructing a BST from '
-    'ten thousand records introduces significant overhead compared with sorting '
-    'an existing list (Fatima, 2023). Graphs are designed to model relational '
-    'networks and serve no meaningful purpose in the context of a linear list '
-    'of borrowing records. The list-of-dictionaries structure therefore '
-    'represents the most pragmatic and efficient choice for this scenario.')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  4. SORTING ALGORITHM ANALYSIS
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '4. Sorting Algorithm Analysis')
-
-add_para(doc,
-    'Four sorting algorithms were analysed in terms of their theoretical '
-    'Big-O time and space complexity across best-case, average-case and '
-    'worst-case scenarios. Table 1 below summarises the findings.')
-
-# Table 1 – Big-O complexity
-t1 = doc.add_table(rows=6, cols=5)
-t1.style = 'Table Grid'
-t1_headers = ['Algorithm', 'Best Case', 'Average Case', 'Worst Case', 'Space']
-for i, h in enumerate(t1_headers):
-    t1.rows[0].cells[i].text = h
-style_table_header(t1.rows[0])
-
-t1_data = [
-    ('Bubble Sort',    'O(n)',        'O(n²)',      'O(n²)',      'O(1)'),
-    ('Insertion Sort', 'O(n)',        'O(n²)',      'O(n²)',      'O(1)'),
-    ('Merge Sort',     'O(n log n)', 'O(n log n)', 'O(n log n)', 'O(n)'),
-    ('Quick Sort',     'O(n log n)', 'O(n log n)', 'O(n²)',      'O(log n)'),
-]
-for idx, row_data in enumerate(t1_data, start=1):
-    for ci, val in enumerate(row_data):
-        t1.rows[idx].cells[ci].text = val
-    fill = 'EAF4FB' if idx % 2 == 0 else 'FFFFFF'
-    style_table_row(t1.rows[idx], fill)
-
-add_caption(doc, 'Table 1: Big-O Complexity Comparison of Sorting Algorithms')
-
-add_para(doc,
-    'Bubble Sort iterates repeatedly over the list, comparing adjacent pairs '
-    'and swapping them if they are in the wrong order. Each full pass moves the '
-    'largest unsorted element into its final position. While its best-case '
-    'complexity of O(n) applies when the input is already sorted, its average '
-    'and worst cases are O(n²), making it unsuitable for large datasets. Its '
-    'sole advantage is implementation simplicity (Sabah et al., 2023).')
-
-add_para(doc,
-    'Insertion Sort processes each element in turn, inserting it into the '
-    'correct position within the already-sorted portion of the list. Like Bubble '
-    'Sort, it achieves O(n) on nearly sorted data but degrades to O(n²) on '
-    'randomly ordered input. It performs well on very small datasets owing to '
-    'low overhead, but scales poorly (Shabbir et al., 2023).')
-
-add_para(doc,
-    'Merge Sort divides the list into two halves recursively until single-element '
-    'sub-lists are reached, then merges pairs back together in sorted order. '
-    'Its time complexity is O(n log n) in all cases — best, average and worst — '
-    'making it highly predictable. The trade-off is additional O(n) space for '
-    'the temporary arrays created during the merge step (Wibowo and Faisal, 2024).')
-
-add_para(doc,
-    'Quick Sort partitions the list around a pivot element so that all smaller '
-    'values precede the pivot and all larger values follow it, then recursively '
-    'sorts each partition. Its average performance is O(n log n) and its space '
-    'overhead is only O(log n) for the call stack. However, a poor pivot choice '
-    '— such as always selecting the largest or smallest element — degrades it '
-    'to O(n²), which can occur on already-sorted or reverse-sorted data '
-    '(Cormen et al., 2022).')
-
-add_para(doc,
-    'For small datasets of seven records, all four algorithms perform in under '
-    'one millisecond, and the differences are negligible. However, the large '
-    'dataset test of ten thousand records exposes the severity of quadratic '
-    'growth: Bubble Sort and Insertion Sort require tens of millions of '
-    'operations, whereas Merge Sort completes the same task with fewer than '
-    '400,000 operations. This empirical evidence, supported by theoretical '
-    'complexity analysis, confirms that Merge Sort is the optimal choice for '
-    'a library system with variable and potentially large input sizes.')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  5. ALGORITHM DESIGN AND FLOWCHART EXPLANATION
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '5. Algorithm Design and Flowchart Explanation')
-
-add_para(doc,
-    'The overall programme logic follows a linear sequence of clearly defined '
-    'stages. Figure 1 below describes each step of the flowchart in detail.')
-
-# ── Flowchart as a styled table ───────────────────────────────────────────
-fc_steps = [
-    ('START', 'Programme execution begins.'),
-    ('Step 1 – Load Data',
-     'Read borrowing records from a text file, or generate a synthetic '
-     'dataset for testing. Validate that each record contains a string '
-     'name and an integer days value. Discard any malformed entries.'),
-    ('Step 2 – Store in List of Dicts',
-     'Place each validated record into a list of dictionaries using the '
-     'keys "name" and "days". Initialise operation counters '
-     '(comparisons = 0, swaps = 0, arithmetic = 0).'),
-    ('Step 3 – Start Timer',
-     'Record the high-resolution start timestamp using time.perf_counter() '
-     'to measure the total elapsed time of the sorting phase.'),
-    ('Step 4 – Merge Sort (Divide)',
-     'If the list length is greater than one, calculate the midpoint '
-     '(mid = len(data) // 2) and split the list into left and right halves. '
-     'Recursively apply Merge Sort to each half until every sub-list '
-     'contains a single element (base case).'),
-    ('Step 5 – Merge Sort (Merge)',
-     'Merge pairs of sorted sub-lists by comparing the "days" field of '
-     'the leading element in each half. Place the smaller value into the '
-     'output list and advance the corresponding pointer. Increment the '
-     'comparison and arithmetic counters at each step. Continue until '
-     'all elements have been merged into a fully sorted list.'),
-    ('Step 6 – Stop Timer',
-     'Record the end timestamp and compute elapsed time in milliseconds: '
-     'elapsed_ms = (end – start) × 1000.'),
-    ('Step 7 – Display Sorted Records',
-     'Print the sorted list in ascending order of days, together with '
-     'the total record count, execution time and cumulative operation count.'),
-    ('Step 8 – Identify Overdue Borrowers',
-     'Iterate through the sorted list and select every record whose '
-     '"days" value exceeds the overdue threshold of 14. Print the names '
-     'and loan durations of all overdue borrowers.'),
-    ('END', 'Programme terminates after displaying all results.'),
-]
-
-fc_tbl = doc.add_table(rows=len(fc_steps), cols=2)
-fc_tbl.style = 'Table Grid'
-for i, (step, desc) in enumerate(fc_steps):
-    fc_tbl.rows[i].cells[0].text = step
-    fc_tbl.rows[i].cells[1].text = desc
-    if step in ('START', 'END'):
-        style_table_header(fc_tbl.rows[i])
-    else:
-        fill = 'EAF4FB' if i % 2 == 0 else 'FFFFFF'
-        style_table_row(fc_tbl.rows[i], fill)
-        for run in fc_tbl.rows[i].cells[0].paragraphs[0].runs:
-            run.bold = True
-        for para in fc_tbl.rows[i].cells[0].paragraphs:
-            for run in para.runs:
-                run.bold = True
-
-add_caption(doc, 'Figure 1: Library Management System Sorting Algorithm Flowchart')
-
-add_para(doc,
-    'The divide step is the recursive heart of Merge Sort. Halving the '
-    'problem at every level produces a tree of depth log₂(n), so a list '
-    'of 10,000 records generates approximately thirteen recursive levels. '
-    'The merge step then processes at most n elements per level, yielding '
-    'the characteristic O(n log n) overall complexity (Cormen et al., 2022). '
-    'The decision logic in Step 8 runs in O(n) time by scanning the already-sorted '
-    'list once, adding negligible cost to the overall execution.')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  6. PYTHON IMPLEMENTATION
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '6. Python Implementation')
-
-add_para(doc,
-    'Python was selected for this implementation because of its clean, '
-    'readable syntax, comprehensive standard library and first-class support '
-    'for list operations and recursion. The programme is structured around '
-    'four components: standard library imports, an operation counter class, '
-    'four sorting functions and a main execution block.')
-
-add_para(doc,
-    'The standard library provides all required supporting functionality. '
-    'The time module supplies the time.perf_counter() function, which '
-    'measures wall-clock time with sub-microsecond resolution and is '
-    'recommended for benchmarking short code segments (Reya et al., 2023). '
-    'The random and string modules generate realistic synthetic datasets '
-    'for medium and large tests. The copy.deepcopy() function ensures each '
-    'algorithm sorts an independent copy of the input list, preventing '
-    'one algorithm\'s mutations from affecting subsequent tests.')
-
-add_para(doc,
-    'The OpCounter class is central to the performance analysis. Each '
-    'sorting function receives an OpCounter instance and increments its '
-    'comparisons, swaps and arithmetic attributes at every corresponding '
-    'operation. This approach separates measurement logic from sorting '
-    'logic and makes the counters accessible after the sort completes '
-    '(Abuba et al., 2025). The code listing below shows the class definition:')
-
-add_code_block(doc,
-    'class OpCounter:\n'
-    '    """Tracks comparisons, swaps, and arithmetic operations."""\n'
-    '    def __init__(self):\n'
-    '        self.comparisons = 0\n'
-    '        self.swaps       = 0\n'
-    '        self.arithmetic  = 0\n'
-    '\n'
-    '    def total(self):\n'
-    '        return self.comparisons + self.swaps + self.arithmetic\n'
-    '\n'
-    '    def reset(self):\n'
-    '        self.comparisons = 0\n'
-    '        self.swaps = 0\n'
-    '        self.arithmetic  = 0')
-
-add_para(doc,
-    'The merge_sort function and its recursive helper _merge_sort_helper '
-    'implement the divide-and-conquer strategy. The helper splits the input '
-    'in half using Python slicing, sorts each half by recursion, then '
-    'reconstructs the sorted list by merging. Every comparison of "days" '
-    'values during the merge increments counter.comparisons, and every '
-    'index increment increments counter.arithmetic, providing a precise '
-    'account of the algorithm\'s work. The listing below shows the core '
-    'merge logic:')
-
-add_code_block(doc,
-    'def _merge_sort_helper(data, counter):\n'
-    '    if len(data) <= 1:\n'
-    '        return                          # base case\n'
-    '    mid   = len(data) // 2\n'
-    '    counter.arithmetic += 1            # midpoint calculation\n'
-    '    left  = data[:mid]\n'
-    '    right = data[mid:]\n'
-    '    _merge_sort_helper(left,  counter)\n'
-    '    _merge_sort_helper(right, counter)\n'
-    '    i = j = k = 0\n'
-    '    while i < len(left) and j < len(right):\n'
-    '        counter.comparisons += 1\n'
-    '        if left[i]["days"] <= right[j]["days"]:\n'
-    '            data[k] = left[i]; i += 1\n'
-    '        else:\n'
-    '            data[k] = right[j]; j += 1\n'
-    '        k += 1\n'
-    '        counter.arithmetic += 1')
-
-add_para(doc,
-    'The find_late_returns() function accepts the sorted list and a '
-    'threshold (defaulting to 14 days) and returns a filtered list of '
-    'overdue records using a Python list comprehension. Because the input '
-    'is already sorted, late borrowers are guaranteed to appear as a '
-    'contiguous block at the end of the list, making the output both '
-    'correct and easy to read (Das, 2025).')
-
-add_para(doc,
-    'Figure 2 below shows the programme\'s console output for the '
-    'small seven-record dataset, demonstrating the sorted order and '
-    'overdue identification.')
-
-# ── Simulated output box ──────────────────────────────────────────────────
-add_code_block(doc,
-    'LIBRARY MANAGEMENT SYSTEM – BORROWING RECORDS SORTER\n'
-    '============================================================\n'
-    '[SMALL DATASET]  7 records\n'
-    'Algorithm            Time (ms)   Comparisons  Swaps  Arithmetic  Total Ops\n'
-    '----------------------------------------------------------------------------\n'
-    'Bubble Sort              0.0434           21      9          28         58\n'
-    'Insertion Sort           0.0352           14      9          20         43\n'
-    'Merge Sort               0.0402           13      0          39         52\n'
-    'Quick Sort               0.0351           15      8          23         46\n'
-    '\n'
-    'Sorted Order (Merge Sort – ascending days):\n'
-    '  Liam         5 days\n'
-    '  Olivia       7 days\n'
-    '  Mason       14 days\n'
-    '  Ava         18 days\n'
-    '  Emma        23 days\n'
-    '  Sophia      31 days\n'
-    '  Noah        42 days\n'
-    '\n'
-    'Overdue borrowers (> 14 days): 4\n'
-    '  Ava         18 days\n'
-    '  Emma        23 days\n'
-    '  Sophia      31 days\n'
-    '  Noah        42 days')
-
-add_caption(doc, 'Figure 2: Programme Console Output for the Small Dataset')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  7. RESULTS AND TESTING
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '7. Results and Testing')
-
-add_para(doc,
-    'Testing was conducted across three dataset sizes to evaluate how each '
-    'algorithm scales. All measurements were obtained by running the programme '
-    'on a standard hardware environment using Python 3.9.')
-
-# ── Table 2: Small dataset ────────────────────────────────────────────────
-add_para(doc, 'Small Dataset (7 Records)', bold=True)
-
-t2_headers = ['Algorithm', 'Time (ms)', 'Comparisons', 'Swaps', 'Arithmetic', 'Total Ops']
-t2_data = [
-    ('Bubble Sort',    '0.0434', '21',  '9',  '28', '58'),
-    ('Insertion Sort', '0.0352', '14',  '9',  '20', '43'),
-    ('Merge Sort',     '0.0402', '13',  '0',  '39', '52'),
-    ('Quick Sort',     '0.0351', '15',  '8',  '23', '46'),
-]
-t2 = doc.add_table(rows=len(t2_data)+1, cols=6)
-t2.style = 'Table Grid'
-for i, h in enumerate(t2_headers):
-    t2.rows[0].cells[i].text = h
-style_table_header(t2.rows[0])
-for idx, row_data in enumerate(t2_data, start=1):
-    for ci, val in enumerate(row_data):
-        t2.rows[idx].cells[ci].text = val
-    fill = 'EAF4FB' if idx % 2 == 0 else 'FFFFFF'
-    style_table_row(t2.rows[idx], fill)
-add_caption(doc, 'Table 2: Performance Results – Small Dataset (7 Records)')
-
-add_para(doc,
-    'With only seven records, all four algorithms complete in under one '
-    'tenth of a millisecond and the differences are negligible. Merge Sort '
-    'records the fewest comparisons (13) because its divide-and-conquer '
-    'structure avoids redundant pairwise comparisons. Notably, Merge Sort '
-    'performs zero swaps, as the merge step writes elements directly into '
-    'their final positions rather than exchanging in-place pairs. The '
-    'overdue identification correctly flags four borrowers: Ava (18 days), '
-    'Emma (23 days), Sophia (31 days) and Noah (42 days).')
-
-# ── Table 3: Medium dataset ───────────────────────────────────────────────
-add_para(doc, 'Medium Dataset (50 Records)', bold=True)
-
-t3_data = [
-    ('Bubble Sort',    '0.4595', '1,225',  '607',  '1,275',  '3,107'),
-    ('Insertion Sort', '0.3156',   '652',  '607',    '701',  '1,960'),
-    ('Merge Sort',     '0.2491',   '224',    '0',    '559',    '783'),
-    ('Quick Sort',     '0.2211',   '265',  '149',    '414',    '828'),
-]
-t3 = doc.add_table(rows=len(t3_data)+1, cols=6)
-t3.style = 'Table Grid'
-for i, h in enumerate(t2_headers):
-    t3.rows[0].cells[i].text = h
-style_table_header(t3.rows[0])
-for idx, row_data in enumerate(t3_data, start=1):
-    for ci, val in enumerate(row_data):
-        t3.rows[idx].cells[ci].text = val
-    fill = 'EAF4FB' if idx % 2 == 0 else 'FFFFFF'
-    style_table_row(t3.rows[idx], fill)
-add_caption(doc, 'Table 3: Performance Results – Medium Dataset (50 Records)')
-
-add_para(doc,
-    'At fifty records the performance gap between quadratic and '
-    'linearithmic algorithms begins to emerge. Bubble Sort requires '
-    '3,107 total operations — approximately four times more than Merge Sort\'s '
-    '783. Merge Sort and Quick Sort both complete in under 0.25 milliseconds, '
-    'while Bubble Sort takes nearly twice as long at 0.46 milliseconds. '
-    'Of the fifty randomly generated borrowers, forty exceeded the '
-    'fourteen-day threshold, confirming the overdue detection logic '
-    'operates correctly on a larger input (Abuba et al., 2025).')
-
-# ── Table 4: Large dataset ────────────────────────────────────────────────
-add_para(doc, 'Large Dataset (10,000 Records)', bold=True)
-
-t4_data = [
-    ('Bubble Sort',    '11,772.45', '49,995,000', '24,654,570', '50,005,000', '124,654,570'),
-    ('Insertion Sort',  '6,179.01', '24,664,567', '24,654,570', '24,674,566',  '73,993,703'),
-    ('Merge Sort',         '75.02',    '120,140',           '0',    '263,755',     '383,895'),
-    ('Quick Sort',        '310.77',    '914,942',     '876,923',  '1,791,865',   '3,583,730'),
-]
-t4 = doc.add_table(rows=len(t4_data)+1, cols=6)
-t4.style = 'Table Grid'
-for i, h in enumerate(t2_headers):
-    t4.rows[0].cells[i].text = h
-style_table_header(t4.rows[0])
-for idx, row_data in enumerate(t4_data, start=1):
-    for ci, val in enumerate(row_data):
-        t4.rows[idx].cells[ci].text = val
-    fill = 'EAF4FB' if idx % 2 == 0 else 'FFFFFF'
-    style_table_row(t4.rows[idx], fill)
-add_caption(doc, 'Table 4: Performance Results – Large Dataset (10,000 Records)')
-
-add_para(doc,
-    'The large dataset results are decisive. Bubble Sort consumed 124,654,570 '
-    'total operations and took nearly twelve seconds to complete, rendering it '
-    'entirely impractical for production use. Insertion Sort required 73,993,703 '
-    'operations and approximately six seconds — an improvement, but still '
-    'unacceptably slow. Quick Sort performed far better at 3,583,730 operations '
-    'and 311 milliseconds; however, its worst-case O(n²) behaviour poses a '
-    'reliability risk on sorted or near-sorted datasets (Sabah et al., 2023). '
-    'Merge Sort was the clear winner: 383,895 total operations and just '
-    '75 milliseconds — roughly 157 times faster than Bubble Sort and 82 times '
-    'faster than Insertion Sort. This result directly validates the theoretical '
-    'O(n log n) prediction and confirms Merge Sort as the optimal algorithm '
-    'for the library management system.')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  8. CONCLUSION
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '8. Conclusion')
-
-add_para(doc,
-    'This project successfully implemented and compared four classical sorting '
-    'algorithms — Bubble Sort, Insertion Sort, Merge Sort and Quick Sort — '
-    'within the context of a library management system that must sort borrowing '
-    'records by loan duration. Empirical testing across small (7), medium (50) '
-    'and large (10,000) datasets confirmed the theoretical Big-O predictions '
-    'and provided quantitative justification for the algorithm selection.')
-
-add_para(doc,
-    'Merge Sort was selected as the optimal solution. Its guaranteed O(n log n) '
-    'complexity in all cases means its performance is predictable regardless of '
-    'the order in which records arrive. On the large test dataset it completed '
-    'in 75 milliseconds with under 400,000 operations, compared with nearly '
-    'twelve seconds and 124 million operations for Bubble Sort. The system '
-    'correctly identified all overdue borrowers — those who exceeded the '
-    'fourteen-day threshold — demonstrating that the functional requirements '
-    'are fully satisfied (Wibowo and Faisal, 2024).')
-
-add_para(doc,
-    'The main advantage of Merge Sort is its stability: equal-day records '
-    'retain their original relative order, which is important for fair and '
-    'consistent overdue reporting. Its consistent O(n log n) performance '
-    'eliminates the risk of catastrophic slowdown on adversarial inputs. '
-    'The primary limitation is its O(n) auxiliary space requirement, since '
-    'the merge step must construct temporary left and right sub-arrays. '
-    'For a library system processing monthly exports of ten thousand records, '
-    'this memory overhead is trivial; it would become a consideration only '
-    'at extremely large scales of several hundred million records '
-    '(Cormen et al., 2022).')
-
-add_para(doc,
-    'The operation counter class provided valuable insight beyond raw execution '
-    'time: Merge Sort performs zero in-place swaps, whereas Bubble Sort on '
-    'ten thousand records performed over twenty-four million. This confirms '
-    'that the write operations associated with quadratic algorithms contribute '
-    'significantly to their real-world slowness, not just their comparison count.')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  9. FUTURE IMPROVEMENTS
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '9. Future Improvements')
-
-add_para(doc,
-    'Several enhancements would strengthen the system for a production '
-    'deployment. First, replacing the flat text file with a relational '
-    'database such as SQLite would enable persistent storage, structured '
-    'querying and indexing. SQL ORDER BY clauses leverage internally '
-    'optimised sorting routines, allowing the database engine to take '
-    'advantage of existing indices when the data is partially sorted '
-    '(Lafore, Broder and Canning, 2022).')
-
-add_para(doc,
-    'Second, an adaptive hybrid algorithm such as Timsort — the default '
-    'sort in Python\'s built-in sorted() function — could further improve '
-    'real-world performance. Timsort identifies naturally ordered "runs" '
-    'in the data and merges them efficiently, achieving O(n) performance '
-    'on nearly sorted input while maintaining O(n log n) in the worst case '
-    '(Wibowo and Faisal, 2024). Replacing the custom Merge Sort with '
-    'Timsort would be a pragmatic upgrade.')
-
-add_para(doc,
-    'Third, a graphical user interface (GUI) built with Python\'s tkinter '
-    'library or a web-based front end using Flask would make the system '
-    'accessible to library staff without programming knowledge. The interface '
-    'could allow librarians to upload record files, view sorted results in '
-    'a table, and export overdue reports as PDFs or emails automatically '
-    'sent to borrowers.')
-
-add_para(doc,
-    'Fourth, parallel sorting using Python\'s multiprocessing module could '
-    'reduce the time taken on very large datasets by distributing sub-lists '
-    'across CPU cores. A parallel Merge Sort would split the initial list '
-    'across available processors, sort each partition concurrently and '
-    'merge the results, potentially achieving near-linear speedup on '
-    'multi-core hardware (Skorpil and Oujezsky, 2022).')
-
-add_para(doc,
-    'Finally, machine learning models trained on historical borrowing patterns '
-    'could predict which items are likely to be returned late, enabling the '
-    'library to send proactive reminders before the due date is reached. '
-    'This would shift the system from reactive overdue detection to '
-    'proactive loan management.')
-
-# ══════════════════════════════════════════════════════════════════════════
-#  10. REFERENCES
-# ══════════════════════════════════════════════════════════════════════════
-
-add_heading(doc, '10. References')
-
-references = [
-    ('Abuba, N.S., Baagyere, E.Y., Nakpih, C.I. and Wiredu, J.K., 2025. '
-     'Optiflexsort: a hybrid sorting algorithm for efficient large-scale data '
-     'processing. Journal of Advances in Mathematics and Computer Science, '
-     '40(2), pp.67–81.'),
-
-    ('Cormen, T.H., Leiserson, C.E., Rivest, R.L. and Stein, C., 2022. '
-     'Introduction to algorithms. 4th edn. Cambridge, MA: MIT Press.'),
-
-    ('Das, U., 2025. Python or Java in a data structures course? How about '
-     'both? In 2025 ASEE Annual Conference & Exposition. Washington, DC: ASEE.'),
-
-    ('Fatima, P., 2023. Optimizing algorithm efficiency through advanced data '
-     'structures in C++: a comparative analysis of performance, scalability and '
-     'complexity. International Journal of Computations, Information and '
-     'Manufacturing (IJCIM), 3(2), pp.66–72.'),
-
-    ('Lafore, R., Broder, A. and Canning, J., 2022. Data structures & '
-     'algorithms in Python. Boston: Addison-Wesley Professional.'),
-
-    ('Reya, N.F., Ahmed, A., Zaman, T. and Islam, M.M., 2023. GreenPy: '
-     'evaluating application-level energy efficiency in Python for green '
-     'computing. Annals of Emerging Technologies in Computing (AETiC), '
-     '7(3), pp.92–110.'),
-
-    ('Sabah, A.S., Abu-Naser, S.S., Helles, Y.E., Abdallatif, R.F., '
-     'Samra, F.Y.A., Taha, A.H.A., Massa, N.M. and Hamouda, A.A., 2023. '
-     'Comparative analysis of the performance of popular sorting algorithms '
-     'on datasets of different sizes and characteristics. International '
-     'Journal of Academic Engineering Research (IJAER), 7(6), pp.8–20.'),
-
-    ('Shabbir, A., Majeed, A., Iftikhar, M., Ali, R.H., Arshad, U., '
-     'Shabbir, M.Z., Ijaz, A.Z., Ali, N. and Aftab, A., 2023. A review of '
-     'algorithm complexities on different valued sorted and unsorted data. '
-     'In 2023 International Conference on IT and Industrial Technologies '
-     '(ICIT). Sialkot: IEEE, pp.1–6.'),
-
-    ('Skorpil, V. and Oujezsky, V., 2022. Parallel genetic algorithms\' '
-     'implementation using a scalable concurrent operation in Python. '
-     'Sensors, 22(6), p.2389.'),
-
-    ('Wibowo, F.R. and Faisal, M., 2024. Comparative analysis of sorting '
-     'algorithms: TimSort Python and classical sorting methods. JISA '
-     '(Jurnal Informatika dan Sains), 7(1), pp.11–18.'),
-]
-
-for ref in references:
-    p = doc.add_paragraph(style='Normal')
-    run = p.add_run(ref)
-    run.font.size = Pt(10.5)
-    p.paragraph_format.left_indent   = Inches(0.4)
-    p.paragraph_format.first_line_indent = Inches(-0.4)
-    p.paragraph_format.space_after   = Pt(6)
-
-# ══════════════════════════════════════════════════════════════════════════
-#  APPENDIX – Full Python Code
-# ══════════════════════════════════════════════════════════════════════════
+for ri, (left, right) in enumerate(decl_data):
+    decl_tbl.rows[ri].cells[0].text = left
+    decl_tbl.rows[ri].cells[1].text = right
+    style_data_row(decl_tbl.rows[ri], "FDFEFE" if ri % 2 == 0 else "EBF5FB")
+
+para(doc, "", space_after=6)
+para(doc, "Signature (Student): ________________________   Date: _____________________",
+     size=10, italic=True)
 
 doc.add_page_break()
-add_heading(doc, 'Appendix A: Full Python Source Code (library_sorter.py)')
 
-with open('library_sorter.py', 'r') as f:
-    code_text = f.read()
 
-add_code_block(doc, code_text)
+# ════════════════════════════════════════════════════════════════════════════
+#  INTRODUCTION PAGE (Learning Outcomes + Assessment Criteria)
+# ════════════════════════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════════════════
+heading(doc, "Introduction", level=1)
+para(doc, "Learning Outcomes:", bold=True)
+
+los = [
+    "LO1. Demonstrate an understanding and examine how different data structures "
+    "and algorithm design methods including lists, stacks, queues, trees, and graphs "
+    "impact the performance of programs.",
+    "LO2. Implement the algorithms for problem solving using Python code.",
+    "LO3. Implement and execute Python programs using functions, modules, libraries "
+    "and classes.",
+]
+for lo in los:
+    p = doc.add_paragraph(lo, style="List Bullet")
+    p.paragraph_format.space_after = Pt(4)
+
+para(doc, "Assessment Criteria:  Weighting 50%  —  2000 words", bold=True, space_before=8)
+para(doc,
+    "The objective of this assignment is to demonstrate proficiency in algorithms, "
+    "data structures, and problem-solving techniques using Python. Through practical "
+    "implementations, students explore various data structures, algorithm design "
+    "methods, and Python programming features to solve real-world problems effectively.")
+
+doc.add_page_break()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 1 – INTRODUCTION
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "1. Introduction")
+
+para(doc,
+    "Hospital emergency departments (EDs) are among the most time-critical "
+    "environments in modern healthcare. Every year, NHS emergency departments in "
+    "England handle tens of millions of patient attendances, with clinical "
+    "outcomes that are directly influenced by how quickly the most seriously ill "
+    "patients receive attention (NHS England, 2024). A fundamental tool that "
+    "enables this prioritisation is the Manchester Triage System (MTS), a "
+    "five-level scoring framework in which trained nurses assign each arriving "
+    "patient a score from 1 (Immediate — life-threatening) to 5 (Non-Urgent — "
+    "can wait) based on presenting symptoms (Mackway-Jones, Marsden and Windle, "
+    "2014). Managing and re-ordering this queue efficiently, as patient volumes "
+    "fluctuate throughout a shift, is a non-trivial computational problem.")
+
+para(doc,
+    "Algorithms sit at the heart of such problems. The choice of sorting "
+    "algorithm determines whether a system responds in milliseconds or minutes "
+    "when the patient census climbs from a quiet overnight shift to a peak "
+    "Saturday afternoon surge (Cormen et al., 2022). A poorly chosen O(n²) "
+    "algorithm that processes fifty records in under a millisecond may take "
+    "more than eleven seconds on ten thousand records — an unacceptable delay "
+    "in a safety-critical setting.")
+
+para(doc,
+    "This project transforms the ED triage problem into a concrete algorithmic "
+    "challenge implemented in Python. Four classical sorting algorithms are "
+    "designed, coded and compared: Bubble Sort, Insertion Sort, Merge Sort, "
+    "and a three-way partitioned Quick Sort. A custom OpCounter class measures "
+    "every comparison, swap and arithmetic operation performed, allowing "
+    "empirical operation counts to be validated against theoretical Big-O "
+    "predictions. A flag_critical() function scans the sorted queue and "
+    "identifies all patients at severity Level 1 or Level 2, who require "
+    "immediate clinical intervention (Das, 2025).")
+
+para(doc,
+    "The system is tested across three dataset scales — a seven-patient shift "
+    "handover log, a fifty-patient mid-shift snapshot, and a ten-thousand-record "
+    "monthly audit export — providing a rigorous basis for algorithm selection "
+    "across the full operational range of an NHS emergency department.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 2 – PROBLEM ANALYSIS
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "2. Problem Analysis and Requirements")
+
+para(doc,
+    "The scenario centres on an NHS emergency department that logs patient "
+    "arrivals in a plain-text file. Each record contains two fields: the "
+    "patient's name (a string) and their MTS triage score (an integer from "
+    "1 to 5). A representative sample of seven records from the assignment "
+    "scenario is shown in Table 0 below.")
+
+add_table(doc,
+    ["Patient Name", "Triage Score", "MTS Category"],
+    [
+        ("James",  "3", "Urgent (Yellow)"),
+        ("Maria",  "1", "Immediate (Red)"),
+        ("Chen",   "4", "Standard (Green)"),
+        ("Fatima", "2", "Very Urgent (Orange)"),
+        ("Oliver", "5", "Non-Urgent (Blue)"),
+        ("Priya",  "1", "Immediate (Red)"),
+        ("Marcus", "3", "Urgent (Yellow)"),
+    ],
+    "Table 0: Assignment Sample Patient Dataset with MTS Categories"
+)
+
+para(doc,
+    "The primary functional requirement is to sort these records in ascending "
+    "order of triage score, so that the patient with the lowest (most critical) "
+    "score is placed first in the output queue. Secondary requirements include: "
+    "flagging all patients with a score of 1 or 2 as critical; reporting the "
+    "total number of records processed; measuring sorting time in milliseconds; "
+    "and counting every comparison, swap and arithmetic operation performed "
+    "(Mackway-Jones, Marsden and Windle, 2014).")
+
+para(doc,
+    "A non-functional requirement is scalability. The system must process both "
+    "small shift logs of around seven to twenty patients and large monthly "
+    "exports of up to ten thousand records without unacceptable degradation in "
+    "response time. This constraint makes algorithmic complexity a primary "
+    "selection criterion. The input data is read from a text file or generated "
+    "synthetically using Python's random module; either way, each record is "
+    "stored as a Python dictionary before sorting begins (Das, 2025).")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 3 – DATA STRUCTURES
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "3. Data Structures and Data Types Selection")
+
+para(doc,
+    "Selecting an appropriate data structure is as consequential as choosing the "
+    "right algorithm; together they govern memory usage, access patterns and "
+    "overall throughput (Fatima, 2023). This system uses Python's built-in types "
+    "arranged in a composite structure to represent the patient queue.")
+
+para(doc,
+    "Each patient's name is stored as a Python string, which supports "
+    "the character-level access and display operations needed for output. The "
+    "triage score is stored as a Python integer, enabling the numeric comparisons "
+    "that drive the sort key. Both fields are encapsulated together in a "
+    "dictionary using the keys 'name' and 'score', for example:")
+
+code_block(doc,
+    "patients = [\n"
+    "    {'name': 'Maria',  'score': 1},\n"
+    "    {'name': 'James',  'score': 3},\n"
+    "    {'name': 'Oliver', 'score': 5},\n"
+    "]")
+
+para(doc,
+    "The outer container is a Python list, which provides zero-based integer "
+    "indexing, in-place element swapping, and dynamic resizing. These properties "
+    "are precisely what comparison-based sorting algorithms require: the ability "
+    "to read any element in O(1) time and exchange two elements without "
+    "reallocating memory (Lafore, Broder and Canning, 2022). A list of "
+    "dictionaries is therefore the most natural fit for this problem.")
+
+para(doc,
+    "Alternative structures were considered but rejected for this task. A stack "
+    "follows Last-In-First-Out (LIFO) semantics, which is useful for undo "
+    "operations or depth-first graph traversal; it provides no mechanism to "
+    "maintain sorted order. A queue's First-In-First-Out (FIFO) structure suits "
+    "patient arrival logging but cannot re-order records by triage score. A "
+    "Binary Search Tree (BST) maintains sorted order and supports O(log n) "
+    "queries, but constructing the tree introduces O(n log n) overhead that "
+    "offers no advantage over simply sorting a list, and it adds significant "
+    "implementation complexity (Fatima, 2023). A graph models relational "
+    "networks and has no natural application to a linear sequence of patient "
+    "records. The list-of-dictionaries structure is therefore the optimal choice "
+    "for this clinical triage scenario.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 4 – ALGORITHM ANALYSIS
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "4. Sorting Algorithm Analysis")
+
+para(doc,
+    "Four sorting algorithms were evaluated against the triage system's "
+    "requirements. Table 1 presents their theoretical Big-O time and space "
+    "complexity across best, average and worst-case scenarios.")
+
+add_table(doc,
+    ["Algorithm", "Best Case", "Average Case", "Worst Case", "Space"],
+    [
+        ("Bubble Sort",              "O(n)",       "O(n²)",       "O(n²)",       "O(1)"),
+        ("Insertion Sort",           "O(n)",       "O(n²)",       "O(n²)",       "O(1)"),
+        ("Merge Sort",               "O(n log n)", "O(n log n)",  "O(n log n)",  "O(n)"),
+        ("Quick Sort (3-way pivot)", "O(n)",       "O(n log n)",  "O(n log n)*", "O(log n)"),
+    ],
+    "Table 1: Big-O Complexity Comparison  (*3-way partition avoids O(n²) on repeated values)"
+)
+
+para(doc,
+    "Bubble Sort scans the list repeatedly, swapping adjacent pairs that are "
+    "out of triage order. Each complete pass moves the least-urgent patient to "
+    "the end of the unsorted section. While straightforward to implement, its "
+    "O(n²) average complexity means it requires approximately 49.9 million "
+    "comparisons on ten thousand records — wholly impractical for a live "
+    "clinical environment (Sabah et al., 2023).")
+
+para(doc,
+    "Insertion Sort processes the queue one patient at a time, inserting each "
+    "new arrival into the correct position among those already sorted. It "
+    "achieves O(n) on nearly-sorted input, which makes it attractive for "
+    "small shift-handover logs where patients arrive in roughly chronological "
+    "order. However, its O(n²) worst case renders it unsuitable for large "
+    "monthly audit exports (Shabbir et al., 2023).")
+
+para(doc,
+    "Merge Sort uses a divide-and-conquer strategy: it recursively halves the "
+    "patient list until each sub-list contains one element, then merges pairs "
+    "of sub-lists by comparing triage scores. Its time complexity is O(n log n) "
+    "in all cases — best, average and worst — making its performance entirely "
+    "predictable regardless of the order in which patients arrive. The "
+    "trade-off is an O(n) auxiliary space requirement for the temporary arrays "
+    "created during the merge step (Cormen et al., 2022).")
+
+para(doc,
+    "Standard Quick Sort (Lomuto partition) degenerates to O(n²) when many "
+    "records share the same key value. With triage scores limited to just five "
+    "distinct integers, this is not a theoretical edge case but a guaranteed "
+    "outcome: testing revealed a RecursionError at 10,000 records due to "
+    "stack depth exceeding 995 recursive calls. This limitation was resolved "
+    "by implementing a three-way Dutch National Flag partition with randomised "
+    "pivot selection, which groups equal scores together in a single pass and "
+    "eliminates the degenerate recursion pattern (Cormen et al., 2022). The "
+    "result is an expected O(n log n) complexity that, with only five distinct "
+    "values, achieves O(n) best-case performance on already-grouped data.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 5 – FLOWCHART
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "5. Algorithm Design and Flowchart Explanation")
+
+para(doc,
+    "The complete algorithm is described by the flowchart in Figure 1. Each "
+    "shape follows standard flowchart conventions: ovals denote terminal nodes "
+    "(START and END), rectangles represent process steps, and diamonds indicate "
+    "decision points with Yes/No branches. The flowchart covers all stages from "
+    "initial data loading through to final output, including the critical-patient "
+    "flag path.")
+
+# ── Embed flowchart image ────────────────────────────────────────────────────
+if os.path.exists("flowchart.png"):
+    doc.add_picture("flowchart.png", width=Inches(5.8))
+    last_para = doc.paragraphs[-1]
+    last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+figure_caption(doc, "Figure 1: Hospital ED Patient Triage System — Algorithm Flowchart")
+
+para(doc,
+    "The algorithm begins by loading patient records from the input file or "
+    "generating a synthetic test dataset. A validation step checks that every "
+    "record contains a string name and an integer triage score in the range "
+    "1–5; any malformed entry is skipped and logged. Valid records are stored "
+    "in the list-of-dictionaries structure and the OpCounter is reset to zero "
+    "before the high-resolution timer starts (Reya et al., 2023).")
+
+para(doc,
+    "The Merge Sort stage follows the left branch of the 'len(data) > 1?' "
+    "decision. The list is split at its midpoint into a left half and a right "
+    "half; each half is sorted recursively until the base case of a "
+    "single-element list is reached. The merge step then reconstructs the "
+    "sorted list by repeatedly comparing the leading element of each half and "
+    "appending the smaller score to the output, incrementing comparison and "
+    "arithmetic counters throughout. Once sorting completes, the timer stops "
+    "and elapsed time is computed. The sorted queue is displayed, and the "
+    "decision diamond 'score ≤ 2?' filters every Level-1 and Level-2 patient "
+    "into a separate critical-flag output before the programme prints the "
+    "final performance summary and terminates.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 6 – PYTHON IMPLEMENTATION
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "6. Python Implementation")
+
+para(doc,
+    "Python was selected for this implementation because of its expressive "
+    "syntax, comprehensive standard library and native support for the list "
+    "and dictionary types central to this design. The programme is structured "
+    "into four components: standard library imports, the OpCounter class, the "
+    "sorting functions, and the main execution block.")
+
+para(doc,
+    "Three standard library modules are used. The time module provides "
+    "time.perf_counter(), a high-resolution clock that measures elapsed time "
+    "with sub-microsecond precision and is the recommended approach for "
+    "benchmarking short code segments in Python (Reya et al., 2023). The "
+    "random module generates synthetic patient datasets with uniformly "
+    "distributed triage scores in the range 1–5. The copy module's deepcopy() "
+    "function ensures that each sorting algorithm receives an independent copy "
+    "of the original list, so no algorithm's in-place mutations affect "
+    "subsequent tests.")
+
+para(doc,
+    "The OpCounter class separates measurement logic cleanly from sorting "
+    "logic. Each sorting function receives an OpCounter instance and increments "
+    "its comparisons, swaps and arithmetic attributes at every corresponding "
+    "operation. This approach provides granular visibility into algorithmic "
+    "work beyond what execution time alone reveals (Abuba et al., 2025):")
+
+code_block(doc,
+    "class OpCounter:\n"
+    "    def __init__(self):\n"
+    "        self.comparisons = 0\n"
+    "        self.swaps       = 0\n"
+    "        self.arithmetic  = 0\n"
+    "\n"
+    "    def total(self):\n"
+    "        return self.comparisons + self.swaps + self.arithmetic")
+
+para(doc,
+    "The Merge Sort implementation consists of a public merge_sort() wrapper "
+    "and a recursive _merge_helper() function. The helper splits the input "
+    "list at the midpoint, recursively sorts each half, then reconstructs the "
+    "sorted list by comparing 'score' fields from the two halves and copying "
+    "the smaller value into the output position. The core merge loop is shown "
+    "below:")
+
+code_block(doc,
+    "while i < len(left) and j < len(right):\n"
+    "    counter.comparisons += 1\n"
+    "    if left[i]['score'] <= right[j]['score']:\n"
+    "        data[k] = left[i];  i += 1\n"
+    "    else:\n"
+    "        data[k] = right[j]; j += 1\n"
+    "    k += 1\n"
+    "    counter.arithmetic += 1")
+
+para(doc,
+    "The flag_critical() function accepts the sorted patient list and a "
+    "threshold (defaulting to 2) and returns all patients whose triage score "
+    "is at or below that threshold using a Python list comprehension. Because "
+    "the input is already sorted in ascending order, all critical patients "
+    "appear as a contiguous block at the start of the list, making the output "
+    "both correct and easy for clinical staff to act upon (Das, 2025). "
+    "Figure 2 shows the programme's console output for the small dataset.")
+
+code_block(doc,
+    "HOSPITAL ED PATIENT TRIAGE MANAGEMENT SYSTEM\n"
+    "============================================================\n"
+    "[SMALL DATASET]  7 patients\n"
+    "Algorithm            Time (ms)  Comparisons  Swaps  Arithmetic  Total Ops\n"
+    "---------------------------------------------------------------------------\n"
+    "Bubble Sort             0.0460           21      9          28         58\n"
+    "Insertion Sort          0.0333           14      9          20         43\n"
+    "Merge Sort              0.0406           14      0          40         54\n"
+    "Quick Sort (3-way)      0.0423           15     13          37         65\n"
+    "\n"
+    "Sorted queue (ascending triage score):\n"
+    "  Maria    Score 1 – Immediate   (Red)\n"
+    "  Priya    Score 1 – Immediate   (Red)\n"
+    "  Fatima   Score 2 – Very Urgent (Orange)\n"
+    "  James    Score 3 – Urgent      (Yellow)\n"
+    "  Marcus   Score 3 – Urgent      (Yellow)\n"
+    "  Chen     Score 4 – Standard    (Green)\n"
+    "  Oliver   Score 5 – Non-Urgent  (Blue)\n"
+    "\n"
+    "Critical patients flagged (score <= 2): 3\n"
+    "  ** Maria    Score 1 – Immediate   (Red)\n"
+    "  ** Priya    Score 1 – Immediate   (Red)\n"
+    "  ** Fatima   Score 2 – Very Urgent (Orange)")
+figure_caption(doc, "Figure 2: Programme Console Output for the Small Dataset (7 patients)")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 7 – RESULTS AND TESTING
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "7. Results and Testing")
+
+para(doc,
+    "The programme was tested across three patient dataset sizes representing "
+    "realistic ED operational scenarios: a seven-patient shift handover, a "
+    "fifty-patient mid-shift snapshot, and a ten-thousand-record monthly audit "
+    "export. All measurements were obtained on a standard Python 3.9 "
+    "environment using time.perf_counter().")
+
+# ── Small dataset ──────────────────────────────────────────────────────────
+para(doc, "Small Dataset — 7 Patients (Shift Handover)", bold=True, space_before=6)
+
+add_table(doc,
+    ["Algorithm", "Time (ms)", "Comparisons", "Swaps", "Arithmetic", "Total Ops"],
+    [
+        ("Bubble Sort",          "0.0460", "21",  "9",  "28", "58"),
+        ("Insertion Sort",       "0.0333", "14",  "9",  "20", "43"),
+        ("Merge Sort",           "0.0406", "14",  "0",  "40", "54"),
+        ("Quick Sort (3-way)",   "0.0423", "15", "13",  "37", "65"),
+    ],
+    "Table 2: Performance Results — Small Dataset (7 Patients)"
+)
+
+para(doc,
+    "With only seven patients, all four algorithms complete in under one "
+    "tenth of a millisecond and the timing differences are insignificant. "
+    "Merge Sort records the fewest comparisons (14) and zero swaps, since its "
+    "merge step writes elements directly into their final positions rather than "
+    "exchanging them in place. Insertion Sort uses the fewest total operations "
+    "(43), reflecting its efficiency advantage on small, bounded datasets. The "
+    "system correctly identified three critical patients — Maria (Score 1), "
+    "Priya (Score 1) and Fatima (Score 2) — demonstrating accurate triage "
+    "flagging at the smallest scale.")
+
+# ── Medium dataset ─────────────────────────────────────────────────────────
+para(doc, "Medium Dataset — 50 Patients (Mid-Shift Snapshot)", bold=True, space_before=6)
+
+add_table(doc,
+    ["Algorithm", "Time (ms)", "Comparisons", "Swaps", "Arithmetic", "Total Ops"],
+    [
+        ("Bubble Sort",          "0.4800", "1,225", "418", "1,275", "2,918"),
+        ("Insertion Sort",       "0.2973",   "466", "418",   "515", "1,399"),
+        ("Merge Sort",           "0.2818",   "210",   "0",   "545",   "755"),
+        ("Quick Sort (3-way)",   "0.2147",   "125",  "80",   "303",   "508"),
+    ],
+    "Table 3: Performance Results — Medium Dataset (50 Patients)"
+)
+
+para(doc,
+    "At fifty patients the performance gap begins to emerge. Bubble Sort "
+    "requires 2,918 total operations — nearly four times more than Merge "
+    "Sort's 755. Notably, the three-way Quick Sort requires only 508 "
+    "operations, outperforming Merge Sort, because it groups the many "
+    "equal-score records together in a single partition pass rather than "
+    "recursing through them pairwise. Of the fifty randomly generated "
+    "patients, 24 (48%) were flagged as critical (score ≤ 2), reflecting a "
+    "plausible high-acuity shift distribution (Sabah et al., 2023).")
+
+# ── Large dataset ──────────────────────────────────────────────────────────
+para(doc, "Large Dataset — 10,000 Patients (Monthly Audit Export)", bold=True, space_before=6)
+
+add_table(doc,
+    ["Algorithm", "Time (ms)", "Comparisons", "Swaps", "Arithmetic", "Total Ops"],
+    [
+        ("Bubble Sort",          "11,168.45", "49,995,000", "20,257,609", "50,005,000", "120,257,609"),
+        ("Insertion Sort",        "4,978.86", "20,267,608", "20,257,609", "20,277,607",  "60,802,824"),
+        ("Merge Sort",               "74.10",    "111,408",           "0",    "255,023",     "366,431"),
+        ("Quick Sort (3-way)",        "41.96",     "23,951",      "13,956",     "55,879",      "93,786"),
+    ],
+    "Table 4: Performance Results — Large Dataset (10,000 Patients)"
+)
+
+para(doc,
+    "The large-dataset results are decisive. Bubble Sort required "
+    "120,257,609 total operations and took 11,168 milliseconds — over eleven "
+    "seconds — making it completely unfit for clinical use at scale. Insertion "
+    "Sort was twice as fast (4,979 ms) but still took nearly five seconds, "
+    "which is unacceptable in a live ED queue. Merge Sort processed all ten "
+    "thousand records in just 74 milliseconds with 366,431 operations — "
+    "approximately 328 times faster than Bubble Sort.")
+
+para(doc,
+    "The most notable result is that the three-way Quick Sort was the fastest "
+    "algorithm of all, completing in only 42 milliseconds with just 93,786 "
+    "total operations — 76% fewer than Merge Sort. This is a direct "
+    "consequence of the triage score distribution: with only five possible "
+    "integer values spread across 10,000 records, each three-way partition "
+    "eliminates on average 2,000 equal-score records from further recursion "
+    "in a single pass, rather than recursing through them pairwise as Merge "
+    "Sort does. This demonstrates that domain knowledge about the data "
+    "distribution can significantly influence algorithm selection beyond "
+    "theoretical Big-O analysis alone (Wibowo and Faisal, 2024). A total of "
+    "3,993 patients (approximately 40%) were correctly flagged as critical "
+    "across the large dataset.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 8 – CONCLUSION
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "8. Conclusion")
+
+para(doc,
+    "This project successfully implemented and empirically evaluated four "
+    "sorting algorithms — Bubble Sort, Insertion Sort, Merge Sort and "
+    "three-way Quick Sort — within the context of an NHS emergency department "
+    "patient triage management system. Testing across datasets of 7, 50 and "
+    "10,000 patient records validated theoretical Big-O predictions and "
+    "revealed domain-specific insights about algorithm behaviour on data with "
+    "low cardinality.")
+
+para(doc,
+    "Merge Sort is recommended as the primary production algorithm because "
+    "its guaranteed O(n log n) complexity in all cases — best, average and "
+    "worst — means its performance is entirely predictable regardless of "
+    "how patients happen to be distributed across the five triage categories "
+    "on any given shift. It processed 10,000 records in 74 milliseconds, "
+    "which satisfies the real-time responsiveness requirement of the system "
+    "(Cormen et al., 2022). Its stability property — preserving the arrival "
+    "order of patients with equal scores — is also clinically important, as "
+    "it ensures fairness among patients of identical urgency.")
+
+para(doc,
+    "The three-way Quick Sort delivered the best measured performance on the "
+    "large dataset (42 ms), owing to the highly repeated nature of triage "
+    "scores. Its primary limitation — discovered during testing — is the "
+    "risk of a RecursionError with a standard Lomuto pivot on deeply repeated "
+    "values. While the randomised 3-way variant resolves this, its expected "
+    "rather than guaranteed O(n log n) complexity makes it less suitable as "
+    "the sole production algorithm for a safety-critical system. "
+    "Bubble Sort and Insertion Sort are appropriate only for very small "
+    "datasets (fewer than twenty patients) where implementation simplicity "
+    "outweighs performance considerations (Shabbir et al., 2023).")
+
+para(doc,
+    "All three functional requirements were met: the sorted patient queue was "
+    "correct across all dataset sizes; critical patients (score ≤ 2) were "
+    "accurately flagged in every test; and full performance statistics "
+    "including record count, elapsed time and operation breakdown were "
+    "reported for every algorithm.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 9 – FUTURE IMPROVEMENTS
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "9. Future Improvements")
+
+para(doc,
+    "Several enhancements would strengthen the system for production "
+    "deployment. First, a real-time streaming mode using Python's heapq "
+    "module could maintain a min-heap of patient scores, allowing new "
+    "arrivals to be inserted in O(log n) time without re-sorting the entire "
+    "queue. This would be more appropriate for continuous patient intake "
+    "than batch sorting (Lafore, Broder and Canning, 2022).")
+
+para(doc,
+    "Second, replacing the flat text file with an SQLite database would "
+    "enable persistent storage, structured querying and automatic indexing "
+    "on the triage score column. SQL's built-in ORDER BY clause, backed by "
+    "an index, could retrieve the sorted queue in sub-millisecond time for "
+    "typical shift sizes. Third, a REST API built with Python's Flask "
+    "framework would allow the triage sorter to be integrated directly into "
+    "existing hospital information systems and accessed by bedside terminals "
+    "or mobile nursing devices.")
+
+para(doc,
+    "Fourth, the system could be extended to incorporate a secondary sort "
+    "key — for example, time of arrival — so that patients with identical "
+    "triage scores are ordered by waiting time, ensuring that no patient is "
+    "indefinitely delayed by a steady stream of equally urgent arrivals. "
+    "Finally, a machine learning model trained on historical ED data could "
+    "predict likely triage scores from presenting symptoms before formal "
+    "nurse assessment, enabling early queue pre-positioning and reducing "
+    "wait times for the most critical patients (Abuba et al., 2025).")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  SECTION 10 – REFERENCES
+# ════════════════════════════════════════════════════════════════════════════
+
+heading(doc, "10. References")
+
+refs = [
+    ("Abuba, N.S., Baagyere, E.Y., Nakpih, C.I. and Wiredu, J.K., 2025. "
+     "Optiflexsort: a hybrid sorting algorithm for efficient large-scale data "
+     "processing. Journal of Advances in Mathematics and Computer Science, "
+     "40(2), pp.67–81."),
+
+    ("Cormen, T.H., Leiserson, C.E., Rivest, R.L. and Stein, C., 2022. "
+     "Introduction to algorithms. 4th edn. Cambridge, MA: MIT Press."),
+
+    ("Das, U., 2025. Python or Java in a data structures course? How about "
+     "both? In 2025 ASEE Annual Conference & Exposition. Washington, DC: ASEE."),
+
+    ("Fatima, P., 2023. Optimizing algorithm efficiency through advanced data "
+     "structures in C++: a comparative analysis of performance, scalability "
+     "and complexity. International Journal of Computations, Information and "
+     "Manufacturing (IJCIM), 3(2), pp.66–72."),
+
+    ("Lafore, R., Broder, A. and Canning, J., 2022. Data structures & "
+     "algorithms in Python. Boston: Addison-Wesley Professional."),
+
+    ("Mackway-Jones, K., Marsden, J. and Windle, J., 2014. Emergency triage: "
+     "Manchester Triage Group. 3rd edn. Oxford: Wiley-Blackwell."),
+
+    ("NHS England, 2024. A&E attendances and emergency admissions 2023–24 "
+     "statistical commentary. Leeds: NHS England. Available at: "
+     "https://www.england.nhs.uk/statistics/statistical-work-areas/ae-waiting-times-and-activity/ "
+     "[Accessed: 13 June 2026]."),
+
+    ("Reya, N.F., Ahmed, A., Zaman, T. and Islam, M.M., 2023. GreenPy: "
+     "evaluating application-level energy efficiency in Python for green "
+     "computing. Annals of Emerging Technologies in Computing (AETiC), "
+     "7(3), pp.92–110."),
+
+    ("Sabah, A.S., Abu-Naser, S.S., Helles, Y.E., Abdallatif, R.F., "
+     "Samra, F.Y.A., Taha, A.H.A., Massa, N.M. and Hamouda, A.A., 2023. "
+     "Comparative analysis of the performance of popular sorting algorithms "
+     "on datasets of different sizes and characteristics. International "
+     "Journal of Academic Engineering Research (IJAER), 7(6), pp.8–20."),
+
+    ("Shabbir, A., Majeed, A., Iftikhar, M., Ali, R.H., Arshad, U., "
+     "Shabbir, M.Z., Ijaz, A.Z., Ali, N. and Aftab, A., 2023. A review of "
+     "algorithm complexities on different valued sorted and unsorted data. "
+     "In 2023 International Conference on IT and Industrial Technologies "
+     "(ICIT). Sialkot: IEEE, pp.1–6."),
+
+    ("Wibowo, F.R. and Faisal, M., 2024. Comparative analysis of sorting "
+     "algorithms: TimSort Python and classical sorting methods. JISA "
+     "(Jurnal Informatika dan Sains), 7(1), pp.11–18."),
+]
+
+for ref in refs:
+    reference_entry(doc, ref)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  APPENDIX A – FULL PYTHON SOURCE CODE
+# ════════════════════════════════════════════════════════════════════════════
+
+doc.add_page_break()
+heading(doc, "Appendix A: Full Python Source Code (triage_sorter.py)")
+
+if os.path.exists("triage_sorter.py"):
+    with open("triage_sorter.py", "r") as fh:
+        code_block(doc, fh.read())
+
+# ════════════════════════════════════════════════════════════════════════════
 #  SAVE
-# ══════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
 
-output_path = 'CSAPSP_Individual_Report.docx'
-doc.save(output_path)
-print(f'Report saved to: {output_path}')
+out = "CSAPSP_Individual_Report.docx"
+doc.save(out)
+print(f"Report saved → {out}")
