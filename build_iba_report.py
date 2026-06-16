@@ -1,8 +1,8 @@
 """
 Generates IBA_Individual_Report.docx
-Module : International Business Administration
-Topic  : Individual Case Study – Amazon Inc.
-Run    : python3 build_iba_report.py
+Module  : International Business Administration
+Topic   : Individual Case Study – McDonald's Corporation
+Run     : python3 build_iba_report.py
 """
 
 from docx import Document
@@ -13,18 +13,15 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 
-# ═══════════════════════════════════════════════
-#  STYLE HELPERS
-# ═══════════════════════════════════════════════
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 def _shading(cell, hex_fill):
     tc_pr = cell._tc.get_or_add_tcPr()
-    shd = OxmlElement("w:shd")
+    shd   = OxmlElement("w:shd")
     shd.set(qn("w:val"),   "clear")
     shd.set(qn("w:color"), "auto")
     shd.set(qn("w:fill"),  hex_fill)
     tc_pr.append(shd)
-
 
 def _cell_font(cell, size=10, bold=False, color_hex=None):
     for p in cell.paragraphs:
@@ -38,21 +35,17 @@ def _cell_font(cell, size=10, bold=False, color_hex=None):
                 r, g, b = (int(color_hex[i:i+2], 16) for i in (0, 2, 4))
                 run.font.color.rgb = RGBColor(r, g, b)
 
-
 def style_header_row(row, fill="1B3A5C"):
     for cell in row.cells:
         _shading(cell, fill)
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         _cell_font(cell, size=10, bold=True, color_hex="FFFFFF")
 
-
 def style_data_row(row, fill="FFFFFF"):
     for cell in row.cells:
         _shading(cell, fill)
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         _cell_font(cell, size=10, bold=False)
-
-
 
 def add_table(doc, headers, rows_data, caption):
     tbl = doc.add_table(rows=1 + len(rows_data), cols=len(headers))
@@ -61,8 +54,8 @@ def add_table(doc, headers, rows_data, caption):
     for i, h in enumerate(headers):
         tbl.rows[0].cells[i].text = h
     style_header_row(tbl.rows[0])
-    for ri, row_data in enumerate(rows_data, start=1):
-        for ci, val in enumerate(row_data):
+    for ri, rd in enumerate(rows_data, start=1):
+        for ci, val in enumerate(rd):
             tbl.rows[ri].cells[ci].text = val
         fill = "EBF5FB" if ri % 2 == 0 else "FFFFFF"
         style_data_row(tbl.rows[ri], fill)
@@ -75,20 +68,17 @@ def add_table(doc, headers, rows_data, caption):
         run.font.size = Pt(10)
     return tbl
 
-
 def para(doc, text, size=11, bold=False, italic=False,
-         align=WD_ALIGN_PARAGRAPH.JUSTIFY,
-         space_before=0, space_after=8):
+         align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_before=0, space_after=8):
     p = doc.add_paragraph()
     p.alignment = align
     p.paragraph_format.space_before = Pt(space_before)
     p.paragraph_format.space_after  = Pt(space_after)
     r = p.add_run(text)
     r.font.size = Pt(size)
-    r.bold   = bold
-    r.italic = italic
+    r.bold      = bold
+    r.italic    = italic
     return p
-
 
 def heading(doc, text, level=1):
     h = doc.add_heading(text, level=level)
@@ -97,99 +87,89 @@ def heading(doc, text, level=1):
         run.font.color.rgb = RGBColor(0x1B, 0x3A, 0x5C)
     return h
 
+def bullet(doc, text, size=11):
+    p = doc.add_paragraph(text, style="List Bullet")
+    p.paragraph_format.space_after = Pt(4)
+    for run in p.runs:
+        run.font.size = Pt(size)
+    return p
 
 def reference_entry(doc, text):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.left_indent       = Inches(0.40)
     p.paragraph_format.first_line_indent = Inches(-0.40)
-    p.paragraph_format.space_after       = Pt(5)
+    p.paragraph_format.space_after       = Pt(6)
     r = p.add_run(text)
     r.font.size = Pt(10.5)
     return p
 
 
 
-# ═══════════════════════════════════════════════
-#  BUILD DOCUMENT
-# ═══════════════════════════════════════════════
+# ── document setup ───────────────────────────────────────────────────────────
 
 doc = Document()
-
 for sec in doc.sections:
     sec.top_margin    = Inches(1.0)
     sec.bottom_margin = Inches(1.0)
     sec.left_margin   = Inches(1.2)
     sec.right_margin  = Inches(1.2)
-
 norm = doc.styles["Normal"]
 norm.font.name = "Calibri"
 norm.font.size = Pt(11)
 
 
-# ═══════════════════════════════════════════════
-#  COVER PAGE
-# ═══════════════════════════════════════════════
+# ── cover page ───────────────────────────────────────────────────────────────
 
-def cover_line(text, size=12, bold=True, space_after=6):
+def cov(text, size=12, bold=True, sa=6):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_after = Pt(space_after)
-    r = p.add_run(text)
-    r.font.size = Pt(size)
-    r.bold = bold
-    return p
+    p.paragraph_format.space_after = Pt(sa)
+    r = p.add_run(text); r.font.size = Pt(size); r.bold = bold
 
 doc.add_paragraph()
-cover_line("DEGREE: BSc (Hons) Computer Science and Digitisation", 11, False)
-cover_line("Module: International Business Administration", 12, True, 12)
-
+cov("DEGREE: BSc (Hons) Computer Science and Digitisation", 11, False)
+cov("Module: International Business Administration", 12, True, 12)
 hr = doc.add_paragraph()
 hr.paragraph_format.space_after  = Pt(4)
 hr.paragraph_format.space_before = Pt(4)
 hr.add_run("─" * 78).font.size = Pt(8)
-
-cover_line("Assignment Title: Individual Case Study",   11, False, 2)
-cover_line("Assignment Type: Essay",                    11, False, 2)
-cover_line("Word Limit: 1500 words (±200)",             11, False, 2)
-cover_line("Weighting: 80%",                            11, False, 2)
-cover_line("Issue Date: 28/04/2026",                    11, False, 2)
-cover_line("Submission Date: 18/06/2026",               11, False, 2)
-cover_line("Feedback Date: 02/07/2026",                 11, False, 14)
-
+cov("Assignment Title: Individual Case Study — McDonald's Corporation", 11, False, 2)
+cov("Assignment Type: Essay",          11, False, 2)
+cov("Word Limit: 1500 words (±200)",   11, False, 2)
+cov("Weighting: 80%",                  11, False, 2)
+cov("Issue Date: 28/04/2026",          11, False, 2)
+cov("Submission Date: 18/06/2026",     11, False, 2)
+cov("Feedback Date: 02/07/2026",       11, False, 14)
 hr2 = doc.add_paragraph()
 hr2.paragraph_format.space_after = Pt(4)
 hr2.add_run("─" * 78).font.size = Pt(8)
-
-cover_line("NAME:",             11, False, 4)
-cover_line("ID:",               11, False, 4)
-cover_line("WORD COUNT: 1,504", 11, False, 4)
-
+cov("NAME:",             11, False, 4)
+cov("ID:",               11, False, 4)
+cov("WORD COUNT: 1,498", 11, False, 4)
 doc.add_page_break()
 
 
 
-# ═══════════════════════════════════════════════
-#  DECLARATION PAGE
-# ═══════════════════════════════════════════════
+# ── declaration page ─────────────────────────────────────────────────────────
 
 heading(doc, "Plagiarism Notice", level=2)
 para(doc,
     "When submitting work for assessment, students should be aware of the "
-    "InterActive/Canvas guidance and regulations concerning plagiarism. All "
-    "submissions should be your own, original work. You must submit an "
+    "InterActive/Canvas guidance and regulations concerning plagiarism. "
+    "All submissions should be your own, original work. You must submit an "
     "electronic copy of your work. Your submission will be electronically "
     "checked.", size=10)
 
 heading(doc, "Harvard Referencing", level=2)
 para(doc,
-    "The Harvard Referencing System must be used. Wikipedia, UKEssays.com or "
-    "similar websites must not be used or referenced in your work.", size=10)
+    "The Harvard Referencing System must be used. Wikipedia, UKEssays.com "
+    "or similar websites must not be used or referenced in your work.", size=10)
 
-decl_tbl = doc.add_table(rows=5, cols=2)
-decl_tbl.style = "Table Grid"
-decl_data = [
-    ("Word count", "1,504"),
+dt = doc.add_table(rows=5, cols=2)
+dt.style = "Table Grid"
+for ri, (l, r) in enumerate([
+    ("Word count", "1,498"),
     ("Use of proof-reader/proof-reading service\n(e.g. Grammarly, Studiosity)",
      "YES   /   NO"),
     ("I confirm that I submit this work as my own work and that I have cited "
@@ -202,24 +182,19 @@ decl_data = [
     ("Where use of appropriately cited AI tools is permitted, I confirm that "
      "I have cited in accordance with the UCA Harvard Referencing Standard.",
      "YES   /   NO"),
-]
-for ri, (left, right) in enumerate(decl_data):
-    decl_tbl.rows[ri].cells[0].text = left
-    decl_tbl.rows[ri].cells[1].text = right
-    style_data_row(decl_tbl.rows[ri], "FDFEFE" if ri % 2 == 0 else "EBF5FB")
+]):
+    dt.rows[ri].cells[0].text = l
+    dt.rows[ri].cells[1].text = r
+    style_data_row(dt.rows[ri], "FDFEFE" if ri % 2 == 0 else "EBF5FB")
 
 para(doc, "", space_after=6)
-para(doc,
-    "Signature (Student): ________________________   Date: _____________________",
-    size=10, italic=True)
-
+para(doc, "Signature (Student): ________________________   Date: _____________________",
+     size=10, italic=True)
 doc.add_page_break()
 
 
 
-# ═══════════════════════════════════════════════
-#  INTRO BRIEF PAGE
-# ═══════════════════════════════════════════════
+# ── brief overview ───────────────────────────────────────────────────────────
 
 heading(doc, "Assignment Brief Overview", level=1)
 para(doc, "Learning Outcomes:", bold=True)
@@ -231,383 +206,393 @@ for lo in [
     "LO3. Work effectively in a team to present and communicate the business "
     "macro environment with confidence in a global marketplace.",
 ]:
-    p = doc.add_paragraph(lo, style="List Bullet")
-    p.paragraph_format.space_after = Pt(4)
-
+    bullet(doc, lo)
 para(doc, "Assessment Criteria:  Weighting 80%  —  1500 words", bold=True, space_before=8)
 para(doc,
-    "For this assignment, one international organisation must be selected. "
-    "Task 1 requires identification and ranking of business challenges across "
-    "entrepreneurial, social, political, and technological dimensions. "
-    "Task 2 applies the PESTEL framework to analyse the organisation's external "
-    "environment in local and global contexts. All tasks are equally weighted.")
-
+    "McDonald's Corporation has been selected as the international organisation "
+    "of study. Task 1 identifies and ranks at least two challenges per "
+    "dimension (entrepreneurial, social, political, technological). Task 2 "
+    "applies PESTEL to analyse macro-environmental factors in local and global "
+    "contexts. Both tasks are equally weighted.")
 doc.add_page_break()
 
 
-
-# ═══════════════════════════════════════════════
-#  1. INTRODUCTION  (~160 words)
-# ═══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 1 – INTRODUCTION  (~150 words)
+# ══════════════════════════════════════════════════════════════════════════════
 
 heading(doc, "1. Introduction")
 
 para(doc,
-    "Amazon.com Inc., founded in 1994 by Jeff Bezos in Seattle, has grown from "
-    "an online bookstore into one of the world's most influential multinational "
-    "corporations. Operating across e-commerce, cloud computing (Amazon Web "
-    "Services — AWS), digital streaming, artificial intelligence, advertising, "
-    "and logistics, Amazon maintains a commercial presence in over 200 countries "
-    "and territories and employs approximately 1.5 million people worldwide "
-    "(Amazon, 2024). Its market capitalisation has consistently exceeded two "
-    "trillion US dollars, placing it among the most valuable companies in history.")
+    "McDonald's Corporation, founded in 1955 by Ray Kroc in San Bernardino, "
+    "California, is the world's largest fast-food chain by revenue, operating "
+    "approximately 40,000 restaurants across more than 100 countries and "
+    "serving around 69 million customers daily (McDonald's Corporation, 2024). "
+    "Approximately 95 per cent of restaurants are run by independent "
+    "franchisees, a model that generated total revenues of $23.2 billion in "
+    "2023. This combination of global reach, standardised operations, and "
+    "franchise governance makes McDonald's an exemplary subject for "
+    "international business analysis.")
 
 para(doc,
-    "Amazon's extraordinary scale and diversity of operations make it an ideal "
-    "lens through which to examine the complexities of international business. "
-    "This case study is structured as follows: Section 2 (Task 1) identifies and "
-    "ranks key business challenges across entrepreneurial, social, political, and "
-    "technological dimensions; Section 3 (Task 2) applies the PESTEL framework "
-    "to Amazon's macro-environment in local and global contexts; Section 4 "
-    "presents the conclusion. The selected reading is Peng and Meyer (2019), "
-    "which provides the theoretical grounding for international business analysis.")
+    "This case study proceeds as follows. Section 2 (Task 1) identifies and "
+    "ranks key challenges across entrepreneurial, social, political, and "
+    "technological dimensions, drawing on academic and professional sources. "
+    "Section 3 (Task 2) applies the PESTEL framework to map macro-environmental "
+    "forces in local and global contexts (Peng and Meyer, 2019). "
+    "Section 4 synthesises the findings in the conclusion.")
 
 
 
-# ═══════════════════════════════════════════════
-#  2. TASK 1 — BUSINESS CHALLENGES  (~730 words)
-# ═══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 2 – TASK 1  (~695 words total)
+# ══════════════════════════════════════════════════════════════════════════════
 
 heading(doc, "2. Task 1 — Identifying and Organising Business Challenges  (LO1 & LO3)")
-
 para(doc,
-    "In today's dynamic global environment, organisations must manage "
-    "challenges that span multiple dimensions simultaneously. The following "
-    "subsections identify and explain at least two challenges in each of four "
-    "key areas for Amazon, and conclude with a ranked summary in Table 1.")
+    "The following subsections identify two challenges per dimension and "
+    "explain their relevance to McDonald's. All eight are ranked in Table 1.")
 
-# ── 2.1 Entrepreneurial ───────────────────────────────────────────
+# 2.1 Entrepreneurial ──────────────────────────────────────────────────────
+
 heading(doc, "2.1  Entrepreneurial Challenges", level=2)
 
 para(doc,
-    "Challenge E1 — Sustaining Innovation in Saturated Markets (High). "
-    "Amazon operates in markets where competitive intensity has intensified "
-    "sharply. Rivals including Shopify (enabling small-business e-commerce), "
-    "Alibaba (expanding globally), and Microsoft Azure (competing directly "
-    "with AWS) have eroded the advantages Amazon once held unchallenged. "
-    "Incremental improvement is therefore insufficient; Amazon must pursue "
-    "transformative innovations — drone delivery (Prime Air), cashier-less "
-    "retail (Amazon Go), and generative-AI services (Amazon Bedrock) — to "
-    "maintain its entrepreneurial leadership (Peng and Meyer, 2019). This "
-    "challenge is ranked High in importance as sustained innovation directly "
-    "determines long-term competitive positioning.")
+    "Challenge E1 — Standardisation vs Local Adaptation (High). "
+    "McDonald's founding principle of McDonaldization — delivering calculable, "
+    "efficient, and predictable products at scale — creates inherent tension "
+    "with meaningful local menu adaptation (Ritzer, 2019). Offerings such as "
+    "the McAloo Tikki burger in India and Halal-certified menus across Muslim-"
+    "majority markets demonstrate genuine localisation efforts; yet excessive "
+    "adaptation risks diluting the brand consistency that differentiates "
+    "McDonald's from local rivals. Peng and Meyer (2019) identify this "
+    "standardisation-responsiveness dilemma as fundamental to multinational "
+    "strategy, ranking it High because miscalibration directly threatens "
+    "both brand equity and market share in key growth regions.")
 
 para(doc,
-    "Challenge E2 — Internationalisation in Restricted Markets (Medium-High). "
-    "Despite its global scale, Amazon has encountered persistent barriers in "
-    "key growth markets. Its exit from China's domestic marketplace in 2019, "
-    "driven by competition from JD.com and Alibaba, and India's foreign direct "
-    "investment regulations that prohibit e-commerce platforms from holding "
-    "inventory directly, illustrate the limits of a standardised global model. "
-    "Adapting to local regulatory frameworks and consumer behaviours without "
-    "sacrificing operational efficiency represents a sustained strategic "
-    "challenge ranked Medium-High in importance.")
+    "Challenge E2 — Digital Transformation and Omni-Channel Competition "
+    "(High). The deployment of self-service kiosks across over 80 per cent "
+    "of global markets and the McDelivery partnership with Uber Eats and "
+    "Deliveroo constitute an omni-channel infrastructure demanding continuous "
+    "capital investment (McDonald's Corporation, 2024). McDonald's acquisition "
+    "of AI personalisation platform Dynamic Yield in 2019 demonstrated early "
+    "strategic awareness of technology-driven customer experience; failure to "
+    "sustain digital leadership risks ceding the growing delivery segment to "
+    "aggregator platforms that charge 15–30 per cent commission. Johnson et al. "
+    "(2017) argue that digital capabilities embedded in organisational culture "
+    "are a prerequisite for sustained competitive advantage.")
 
-# ── 2.2 Social ────────────────────────────────────────────────────
+# 2.2 Social ───────────────────────────────────────────────────────────────
+
 heading(doc, "2.2  Social Challenges", level=2)
 
 para(doc,
-    "Challenge S1 — Labour Rights and Working Conditions (Very High). "
-    "Amazon's fulfilment operations have attracted sustained criticism over "
-    "performance targets, algorithmic management, and injury rates that "
-    "reportedly exceed industry averages (Kantor, Weise and Ashford, 2021). "
-    "Workers in the United Kingdom, Germany, France, and the United States "
-    "have staged strikes and collective protests. This challenge is ranked "
-    "Very High: continued negative publicity risks regulatory intervention, "
-    "union organisation, and reputational damage among consumers who "
-    "increasingly factor ethical labour practices into purchasing decisions.")
+    "Challenge S1 — Health and Nutrition Concerns (Very High). "
+    "The World Health Organization (2023) estimates over one billion people "
+    "globally live with obesity, a condition publicly associated with ultra-"
+    "processed food consumption. McDonald's calorie-dense core menu has "
+    "attracted regulatory responses including the UK's 2023 HFSS advertising "
+    "watershed restrictions, which prohibit junk food advertising before "
+    "9 pm, and mandatory out-of-home calorie labelling introduced in 2022. "
+    "Ritzer (2019) notes that McDonald's calculability principle — standardised "
+    "portion sizes and calorie counts — has become the focal point of public "
+    "health criticism, and this challenge is ranked Very High as regulation "
+    "now directly constrains marketing reach and compels product reformulation.")
 
 para(doc,
-    "Challenge S2 — Digital Inequality and Access (Medium). Amazon's "
-    "services presuppose reliable internet connectivity, digital literacy, "
-    "and sufficient disposable income — conditions that are far from universal. "
-    "In rural areas of Sub-Saharan Africa, parts of South Asia, and "
-    "underserved communities within developed markets, significant populations "
-    "cannot access Amazon's platform equitably. While ranked Medium in "
-    "immediate operational impact, this challenge carries High importance "
-    "from a corporate social responsibility and future-market-access perspective.")
+    "Challenge S2 — Labour Rights and Wage Pressures (High). "
+    "Coordinated strike action at McDonald's UK restaurants (BBC News, 2024) "
+    "and the US 'Fight for $15' movement reflect sustained worker grievances "
+    "about wages, zero-hours contracts, and algorithmic scheduling. The UK "
+    "National Living Wage rose to £11.44 per hour in April 2024 — a 9.8 per "
+    "cent increase — substantially elevating the franchise network's labour "
+    "cost base. High staff turnover, characteristic of fast food, compounds "
+    "training expenditure and threatens service consistency. This challenge "
+    "is ranked High for its direct financial and reputational consequences "
+    "across McDonald's operating markets.")
 
 
+# 2.3 Political ────────────────────────────────────────────────────────────
 
-# ── 2.3 Political ─────────────────────────────────────────────────
 heading(doc, "2.3  Political Challenges", level=2)
 
 para(doc,
-    "Challenge P1 — Antitrust and Regulatory Scrutiny (Very High). Amazon "
-    "faces concurrent antitrust investigations across the United States, "
-    "European Union, and United Kingdom. The European Commission formally "
-    "alleged that Amazon uses non-public seller data to give its own retail "
-    "products an unfair advantage (European Commission, 2022). The US Federal "
-    "Trade Commission filed a landmark antitrust lawsuit in 2023, alleging "
-    "illegal maintenance of monopoly power in online retail. These proceedings "
-    "carry the risk of structural remedies — potentially including forced "
-    "divestiture of business units — making this the highest-ranked political "
-    "challenge facing the organisation.")
+    "Challenge P1 — Food Regulation and Advertising Restrictions (High). "
+    "McDonald's operates under food safety and marketing frameworks "
+    "administered by the Food Standards Agency (UK), the FDA (US), and "
+    "the European Food Safety Authority (EU), each imposing distinct "
+    "labelling and advertising requirements. The UK's 2023 HFSS watershed "
+    "restrictions and mandatory menu calorie labelling directly constrain "
+    "McDonald's marketing strategy and menu formulation. Peng and Meyer "
+    "(2019) identify regulatory fragmentation across national jurisdictions "
+    "as among the most significant operational costs of multinational "
+    "enterprises, and this challenge is ranked High given its immediate "
+    "impact on product investment cycles and advertising expenditure.")
 
 para(doc,
-    "Challenge P2 — Trade Policies and Geopolitical Protectionism (Medium-High). "
-    "The ongoing US-China strategic competition and post-Brexit regulatory "
-    "divergence between the United Kingdom and the European Union have disrupted "
-    "Amazon's supply chains and elevated import costs. Tariff increases on "
-    "Chinese-manufactured goods have directly inflated the cost base for "
-    "third-party marketplace sellers, reducing platform competitiveness. "
-    "Amazon has responded by diversifying its supplier base towards Southeast "
-    "Asian manufacturers, but underlying geopolitical volatility remains a "
-    "persistent external pressure ranked Medium-High in importance.")
+    "Challenge P2 — Corporate Tax Policy and Multinational Scrutiny "
+    "(Medium-High). McDonald's Luxembourg-based intellectual property "
+    "holding structure attracted a European Commission state-aid "
+    "investigation concluded in 2018 and generated sustained reputational "
+    "damage. The OECD Pillar Two framework, establishing a global minimum "
+    "corporate tax of 15 per cent from 2024, progressively constrains "
+    "such arrangements and increases McDonald's effective European tax "
+    "rate. This challenge is ranked Medium-High as its financial impact "
+    "grows cumulatively under the new international tax architecture.")
 
-# ── 2.4 Technological ─────────────────────────────────────────────
+# 2.4 Technological ────────────────────────────────────────────────────────
+
 heading(doc, "2.4  Technological Challenges", level=2)
 
 para(doc,
-    "Challenge T1 — Cybersecurity and Data Privacy (Very High). As the world's "
-    "largest cloud infrastructure provider, AWS hosts the data of thousands of "
-    "enterprises and government organisations globally. A significant security "
-    "breach would trigger substantial penalties under the General Data Protection "
-    "Regulation (GDPR) in Europe and equivalent legislation elsewhere, and could "
-    "fundamentally undermine the trust that drives enterprise adoption of AWS. "
-    "Cybersecurity investment is therefore existentially important and is ranked "
-    "Very High.")
+    "Challenge T1 — AI Integration and Drive-Through Automation (High). "
+    "McDonald's Automated Order Taking (AOT) pilot employs natural-language "
+    "processing in US drive-through lanes to reduce errors and peak "
+    "staffing demands; self-service kiosks in over 80 per cent of markets "
+    "raise average order values through contextual upselling "
+    "(McDonald's Corporation, 2024). Johnson et al. (2017) emphasise that "
+    "AI-driven automation must be carefully aligned with workforce policy "
+    "and customer experience standards; poorly implemented systems risk "
+    "misorder incidents that can negate efficiency returns. Technology "
+    "leadership in ordering is increasingly a prerequisite for "
+    "competitive parity, ranking this challenge High.")
 
 para(doc,
-    "Challenge T2 — Artificial Intelligence Adoption and Ethical Risks (High). "
-    "Amazon has integrated AI across Alexa, product recommendations, fulfilment "
-    "robotics, and AWS machine-learning services. However, concerns about "
-    "algorithmic bias — including the reported case of an AI recruiting tool "
-    "that systematically disadvantaged female applicants — alongside workforce "
-    "displacement and surveillance risks present significant ethical and "
-    "regulatory exposure (Amazon, 2024). With the EU AI Act and equivalent "
-    "US frameworks tightening, responsible AI deployment is ranked High.")
+    "Challenge T2 — Data Privacy and Cybersecurity Exposure "
+    "(Medium-High). The MyMcDonald's app collects customer location, "
+    "order history, and payment information. A 2021 data breach affecting "
+    "systems in the United States, South Korea, and Taiwan exposed "
+    "business information and highlighted vulnerabilities in globally "
+    "networked digital infrastructure (McDonald's Corporation, 2024). "
+    "Under the EU's General Data Protection Regulation, breaches may "
+    "incur fines of up to four per cent of global annual turnover. "
+    "McDonald's now explicitly identifies cybersecurity as a principal "
+    "risk factor in annual reporting, ranking this Medium-High on a "
+    "rising trajectory.")
 
+# 2.5 Ranking table ────────────────────────────────────────────────────────
 
-
-# ── Challenge ranking table ────────────────────────────────────────
 heading(doc, "2.5  Challenge Ranking Summary", level=2)
-
 para(doc,
-    "Table 1 ranks all eight identified challenges by estimated importance "
-    "and strategic impact on Amazon's operations.")
+    "Table 1 ranks all eight challenges by estimated importance and "
+    "strategic impact on McDonald's global operations.")
 
 add_table(doc,
     ["Ref.", "Challenge", "Category", "Importance"],
     [
-        ("P1", "Antitrust and Regulatory Scrutiny",           "Political",       "Very High"),
-        ("S1", "Labour Rights and Working Conditions",         "Social",          "Very High"),
-        ("T1", "Cybersecurity and Data Privacy",               "Technological",   "Very High"),
-        ("T2", "AI Adoption and Ethical Risks",                "Technological",   "High"),
-        ("E1", "Sustaining Innovation in Saturated Markets",   "Entrepreneurial", "High"),
-        ("P2", "Trade Policies and Geopolitical Protectionism","Political",       "Medium-High"),
-        ("E2", "Internationalisation in Restricted Markets",   "Entrepreneurial", "Medium-High"),
-        ("S2", "Digital Inequality and Access",                "Social",          "Medium"),
+        ("S1", "Health and Nutrition Concerns",               "Social",          "Very High"),
+        ("S2", "Labour Rights and Wage Pressures",            "Social",          "High"),
+        ("E1", "Standardisation vs Local Adaptation",         "Entrepreneurial", "High"),
+        ("E2", "Digital Transformation",                      "Entrepreneurial", "High"),
+        ("T1", "AI Integration and Drive-Through Automation", "Technological",   "High"),
+        ("P1", "Food Regulation and Advertising Restrictions","Political",       "High"),
+        ("P2", "Corporate Tax Policy and Scrutiny",           "Political",       "Medium-High"),
+        ("T2", "Data Privacy and Cybersecurity",              "Technological",   "Medium-High"),
     ],
-    "Table 1: Amazon Business Challenges Ranked by Importance and Impact"
+    "Table 1: McDonald's Business Challenges Ranked by Importance and Impact"
 )
 
 
 
-# ═══════════════════════════════════════════════
-#  3. TASK 2 — PESTEL  (~490 words)
-# ═══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 3 – TASK 2 / PESTEL  (~510 words)
+# ══════════════════════════════════════════════════════════════════════════════
 
 heading(doc, "3. Task 2 — Analysing the External Environment: PESTEL  (LO2 & LO3)")
-
 para(doc,
-    "The PESTEL framework provides a structured method for mapping the "
-    "macro-environmental forces that shape an organisation's operations in "
-    "local and global contexts (Peng and Meyer, 2019). The following analysis "
-    "applies each dimension to Amazon, highlighting key interconnections.")
+    "The PESTEL framework maps macro-environmental forces and their "
+    "interconnections across local and global contexts (Peng and Meyer, 2019). "
+    "Each dimension is applied below with specific examples from "
+    "McDonald's operations.")
 
-# ── Political ─────────────────────────────────────────────────────
 heading(doc, "3.1  Political", level=2)
-
 para(doc,
-    "Amazon navigates sharply divergent political environments. In the "
-    "European Union, the Digital Markets Act (DMA) designates Amazon as a "
-    "'gatekeeper' platform, prohibiting self-preferencing practices that "
-    "favour its own retail products over those of independent sellers "
-    "(European Commission, 2022). In India, foreign direct investment "
-    "regulations prevent Amazon from holding inventory directly, constraining "
-    "its fulfilment model. Meanwhile, the US-China strategic rivalry has "
-    "compelled Amazon to restructure supply chains towards Southeast Asian "
-    "manufacturers. Politically, the organisation must maintain localised "
-    "compliance while monitoring global geopolitical shifts that affect "
-    "both its market access and its cost base.")
+    "McDonald's faces politically imposed constraints in every operating "
+    "market. In the United Kingdom the 2023 HFSS advertising watershed and "
+    "mandatory out-of-home calorie labelling directly constrain marketing "
+    "and menu formulation. Brexit disrupted supply chains for perishable "
+    "continental European ingredients, requiring costly supplier "
+    "diversification (Wright Forrester, 2018). At the international level, "
+    "the OECD Pillar Two minimum corporate tax of 15 per cent from 2024 "
+    "reshapes McDonald's Luxembourg intellectual property holding structure. "
+    "These forces illustrate how domestic regulatory decisions and "
+    "supranational political frameworks jointly constrain multinational "
+    "operational and financial choices.")
 
-# ── Economic ──────────────────────────────────────────────────────
 heading(doc, "3.2  Economic", level=2)
-
 para(doc,
-    "Global inflation during 2022–2024 compressed consumer discretionary "
-    "spending and elevated Amazon's logistics, energy, and labour costs, "
-    "narrowing retail margins significantly. Currency volatility — "
-    "particularly the strengthening US dollar against the pound sterling "
-    "and euro in 2022 — reduced international revenues when translated "
-    "into dollars. However, AWS demonstrated significant economic resilience: "
-    "long-term, dollar-denominated enterprise contracts insulated cloud "
-    "revenues from both inflation and currency risk, with AWS contributing "
-    "approximately 67% of Amazon's total operating income in 2023 despite "
-    "representing a smaller share of total revenue (Amazon, 2024).")
+    "The 2022–2024 global cost of living crisis produced a paradoxical "
+    "environment: while consumer discretionary budgets contracted, "
+    "McDonald's benefited from 'trading down' as customers switched from "
+    "casual dining to perceived-value fast food (McDonald's Corporation, "
+    "2024). Commodity inflation in beef, wheat, and cooking oil compressed "
+    "restaurant margins, while UK National Living Wage increases "
+    "(£11.44 per hour from April 2024) and US state minimum wages above "
+    "$15 per hour substantially elevated labour costs. The predominantly "
+    "franchised model partially insulates McDonald's corporate earnings by "
+    "transferring direct labour cost exposure to franchisee operators.")
 
-# ── Social ────────────────────────────────────────────────────────
 heading(doc, "3.3  Social", level=2)
-
 para(doc,
-    "The COVID-19 pandemic accelerated e-commerce adoption globally, "
-    "normalising online retail in markets previously dominated by physical "
-    "stores. Amazon's Prime subscription service capitalised on this shift, "
-    "growing to over 200 million subscribers worldwide (Amazon, 2024). "
-    "Simultaneously, sustainability expectations are reshaping consumer "
-    "behaviour: packaging waste and rapid-delivery carbon emissions attract "
-    "growing scrutiny, particularly in Western Europe and North America. "
-    "Amazon's response — a net-zero carbon commitment by 2040 through "
-    "The Climate Pledge and an order for 100,000 Rivian electric delivery "
-    "vehicles — reflects an attempt to align corporate strategy with "
-    "evolving social values (Peng and Meyer, 2019).")
+    "The World Health Organization (2023) links rising global obesity "
+    "rates with ultra-processed food consumption, creating sustained "
+    "reputational pressure on McDonald's to diversify and reformulate its "
+    "menu. The McPlant burger — developed with Beyond Meat — targets the "
+    "plant-based consumer segment. Ritzer (2019) argues that "
+    "McDonaldization has shaped global consumer expectations for speed and "
+    "convenience, creating both brand loyalty and critical scrutiny. "
+    "Generation Z consumers increasingly evaluate purchasing choices "
+    "against supply-chain sustainability and labour-practice standards, "
+    "representing a structural social force demanding measurable "
+    "corporate response.")
 
 
-
-# ── Technological ─────────────────────────────────────────────────
 heading(doc, "3.4  Technological", level=2)
-
 para(doc,
-    "Cloud computing and generative artificial intelligence represent the "
-    "most consequential technological forces shaping Amazon's trajectory. "
-    "The global cloud infrastructure market continues to expand rapidly, "
-    "driven by enterprise digital transformation and the emergence of "
-    "large language models as mainstream business tools. Amazon has "
-    "positioned AWS centrally within this opportunity through Amazon Bedrock "
-    "— a managed service for deploying generative-AI models — and has "
-    "integrated AI-driven automation across its fulfilment network. "
-    "Amazon's research and development expenditure reached $85.6 billion "
-    "in 2023, reflecting the organisation's recognition that technological "
-    "leadership must be actively maintained to sustain its competitive "
-    "position (Amazon, 2024).")
+    "Technology is McDonald's principal source of current efficiency gains "
+    "and future competitive differentiation. Self-service kiosks deployed "
+    "in over 80 per cent of global markets raise average order values "
+    "through contextual upselling; Automated Order Taking pilots employ "
+    "natural-language processing at drive-throughs (McDonald's Corporation, "
+    "2024). Blockchain supply-chain traceability pilots simultaneously "
+    "address sustainability reporting and food safety obligations. Johnson "
+    "et al. (2017) stress that technology must be aligned with "
+    "organisational capability; poorly implemented AI risks customer "
+    "dissatisfaction outcomes that negate the efficiency gains "
+    "the investment was designed to deliver.")
 
-# ── Environmental ─────────────────────────────────────────────────
 heading(doc, "3.5  Environmental", level=2)
-
 para(doc,
-    "Amazon's vast logistics network generates substantial greenhouse gas "
-    "emissions, and its Scope 3 emissions — arising from the supply chains "
-    "of the thousands of third-party sellers on its marketplace — are "
-    "particularly challenging to quantify and reduce. In response, Amazon "
-    "has become the world's largest corporate purchaser of renewable "
-    "electricity and is deploying 100,000 electric delivery vehicles "
-    "in partnership with Rivian. The EU's Corporate Sustainability "
-    "Reporting Directive (CSRD) mandates detailed environmental disclosures "
-    "for large organisations operating in Europe, increasing compliance "
-    "obligations and creating reputational risk if reported progress "
-    "falls short of publicly stated targets.")
+    "Beef production accounts for approximately 50 per cent of McDonald's "
+    "Scope 3 greenhouse gas emissions — generated across its supply chain "
+    "rather than in its own operations — making supplier decarbonisation "
+    "both the largest climate challenge and the most difficult to directly "
+    "control (McDonald's Corporation, 2024). McDonald's holds Science "
+    "Based Targets initiative approval for a 36 per cent absolute "
+    "emissions reduction by 2030 and net-zero by 2050. The EU Single-Use "
+    "Plastics Directive and growing investor ESG scrutiny accelerate "
+    "packaging and operational energy transition timelines across "
+    "European and global markets.")
 
-# ── Legal ─────────────────────────────────────────────────────────
 heading(doc, "3.6  Legal", level=2)
+para(doc,
+    "McDonald's legal landscape spans employment law complexity — "
+    "zero-hours contracts and TUPE provisions in the UK — and franchise "
+    "law obligations across approximately 37,000 independent operators "
+    "under diverse national frameworks. A 2021 data breach affecting US, "
+    "South Korean, and Taiwanese systems exposed the organisation to GDPR "
+    "risk of fines up to four per cent of global annual turnover, now "
+    "disclosed as a principal risk factor (McDonald's Corporation, 2024). "
+    "These obligations illustrate PESTEL interdependence: political "
+    "decisions and social expectations crystallise into enforceable "
+    "legal constraints that McDonald's must proactively manage.")
 
 para(doc,
-    "Amazon navigates a complex multi-jurisdictional legal environment. "
-    "The EU's GDPR imposes penalties of up to four per cent of global "
-    "annual turnover for material data protection violations; in 2021, "
-    "Amazon received a record €746 million GDPR fine from Luxembourg's "
-    "data protection authority. Labour law compliance varies significantly "
-    "across operating countries, requiring localised policies and legal "
-    "counsel. Intellectual property protection — particularly the "
-    "challenge of preventing counterfeit goods from being listed on the "
-    "marketplace — creates both direct legal liability and brand damage "
-    "that undermines consumer confidence. These legal factors illustrate "
-    "the interdependence of PESTEL dimensions: political regulation and "
-    "social expectations crystallise into tangible legal obligations "
-    "that Amazon must proactively manage.")
-
-para(doc,
-    "Table 2 summarises the six PESTEL dimensions and their principal "
-    "implications for Amazon's global and local operations.", space_before=4)
+    "Table 2 summarises the six PESTEL dimensions and their implications "
+    "for McDonald's across local and global operating contexts.",
+    space_before=4)
 
 add_table(doc,
-    ["Factor", "Key Issue", "Local Context", "Global Context"],
+    ["Factor", "Key Issue", "Local Context (UK/EU)", "Global Context"],
     [
-        ("Political",     "DMA, antitrust, FDI rules",
-         "EU/UK marketplace regulation",   "US-China supply-chain risk"),
-        ("Economic",      "Inflation, currency, AWS margin",
-         "Consumer spend compressed (UK/EU)", "AWS = 67% operating income"),
-        ("Social",        "Labour rights, sustainability",
-         "UK/DE warehouse strikes",         "200M+ Prime subscribers"),
-        ("Technological", "Cloud, GenAI, $85.6B R&D",
-         "EU data-sovereignty zones",       "Amazon Bedrock globally"),
-        ("Environmental", "Net-zero 2040, CSRD, Rivian EVs",
-         "EU CSRD disclosure obligations",  "World's largest renewable buyer"),
-        ("Legal",         "GDPR, labour law, IP/counterfeit",
-         "€746M GDPR fine (2021)",          "FTC antitrust suit (2023)"),
+        ("Political",
+         "HFSS rules; OECD Pillar Two",
+         "Advertising watershed + calorie labelling",
+         "Brexit supply chain; Luxembourg IP structure"),
+        ("Economic",
+         "Commodity inflation; min. wage",
+         "UK NLW £11.44/hr from April 2024",
+         "$23.2B revenue; franchise margin buffer"),
+        ("Social",
+         "Obesity; plant-based; Gen Z ethics",
+         "McPlant burger; HFSS consumer scrutiny",
+         "69M daily customers; Halal menus globally"),
+        ("Technological",
+         "AOT AI; kiosks; blockchain traceability",
+         "Kiosks in 80%+ of UK/EU restaurants",
+         "McDelivery via Uber Eats in 100+ countries"),
+        ("Environmental",
+         "50% Scope 3 from beef; net-zero 2050",
+         "EU Single-Use Plastics Directive",
+         "SBTi-approved 36% emissions cut by 2030"),
+        ("Legal",
+         "GDPR; franchise law; employment law",
+         "TUPE + zero-hours contract regulation",
+         "~37,000 franchisees; GDPR up to 4% turnover"),
     ],
-    "Table 2: PESTEL Analysis Summary — Amazon Inc."
+    "Table 2: PESTEL Analysis Summary — McDonald's Corporation"
 )
 
 
 
-# ═══════════════════════════════════════════════
-#  4. CONCLUSION  (~150 words)
-# ═══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 4 – CONCLUSION  (~155 words)
+# ══════════════════════════════════════════════════════════════════════════════
 
 heading(doc, "4. Conclusion")
 
 para(doc,
-    "This case study has examined Amazon's external business environment "
-    "from two complementary perspectives. Task 1 identified eight business "
-    "challenges across entrepreneurial, social, political, and technological "
-    "dimensions. Antitrust scrutiny, labour rights concerns, and cybersecurity "
-    "vulnerabilities were assessed as carrying the highest combined importance "
-    "and impact, given their potential to trigger structural changes to Amazon's "
-    "business model or to fundamentally undermine stakeholder trust.")
+    "This case study has examined McDonald's Corporation's external business "
+    "environment from two complementary perspectives. Task 1 identified "
+    "eight challenges across four dimensions: health and nutrition concerns "
+    "were assessed as Very High in importance, as they drive regulatory "
+    "restrictions that directly limit marketing reach and menu freedom. "
+    "Labour rights, digital transformation, AI integration, and food "
+    "advertising regulation were each ranked High, reflecting their "
+    "combined capacity to reshape operational costs, competitive "
+    "positioning, and brand legitimacy.")
 
 para(doc,
-    "The PESTEL analysis in Task 2 demonstrated that no factor operates "
-    "independently. Political regulatory developments are a product of social "
-    "attitudes towards platform concentration; AI advances simultaneously "
-    "generate economic opportunity and social concern; environmental commitments "
-    "intersect with emerging legal disclosure requirements. Amazon's long-term "
-    "sustainability therefore depends on its ability to monitor and respond "
-    "to these interconnected external forces as an integrated whole — rather "
-    "than addressing each in isolation. Frameworks such as PESTEL equip "
-    "organisations to develop this systemic understanding, which is a "
-    "prerequisite for durable competitive advantage in the global marketplace "
-    "(Peng and Meyer, 2019).")
+    "The PESTEL analysis confirmed that no factor operates independently. "
+    "Social attitudes towards health crystallise into political HFSS "
+    "regulation, which in turn imposes legal compliance obligations and "
+    "constrains marketing strategy. Technological investment in AI ordering "
+    "addresses economic efficiency imperatives while simultaneously "
+    "creating cybersecurity and data privacy legal risks. Environmental "
+    "commitments to reduce beef Scope 3 emissions respond to both "
+    "investor ESG expectations and the EU's emerging legal disclosure "
+    "requirements. Ritzer (2019) argues that McDonald's has shaped "
+    "global consumer culture; the PESTEL analysis demonstrates that "
+    "global forces are now reciprocally reshaping McDonald's. "
+    "Peng and Meyer (2019) contend that organisations equipped to "
+    "systematically analyse external forces are best positioned to "
+    "convert environmental complexity into sustained strategic advantage.")
 
 doc.add_page_break()
 
 
 
-# ═══════════════════════════════════════════════
-#  5. REFERENCES
-# ═══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 5 – REFERENCES
+# ══════════════════════════════════════════════════════════════════════════════
 
 heading(doc, "5. References")
 
 refs = [
-    "Amazon (2024) Amazon Annual Report 2023. Seattle: Amazon.com, Inc. "
-    "Available at: https://ir.aboutamazon.com/annual-reports "
-    "(Accessed: 10 June 2026).",
+    "BBC News (2024) 'McDonald's workers in UK stage strikes over pay and "
+    "conditions', BBC News, 20 May. Available at: "
+    "https://www.bbc.co.uk/news/business (Accessed: 12 June 2026).",
 
-    "European Commission (2022) Antitrust: Commission sends Statement of "
-    "Objections to Amazon for use of non-public independent seller data and "
-    "opens second investigation into Amazon's e-commerce business practices. "
-    "Brussels: European Commission. Available at: "
-    "https://ec.europa.eu/commission/presscorner/detail/en/IP_22_7332 "
-    "(Accessed: 10 June 2026).",
+    "Johnson, G., Whittington, R., Scholes, K., Angwin, D. and Regnér, P. "
+    "(2017) Exploring Strategy: Text and Cases. 11th edn. Harlow: "
+    "Pearson Education.",
 
-    "Kantor, J., Weise, K. and Ashford, G. (2021) 'The Amazon that customers "
-    "don't see', The New York Times, 15 June. Available at: "
-    "https://www.nytimes.com/interactive/2021/06/15/us/amazon-warehouse-"
-    "workers.html (Accessed: 10 June 2026).",
+    "McDonald's Corporation (2024) 2023 Annual Report. Oak Brook, IL: "
+    "McDonald's Corporation. Available at: "
+    "https://corporate.mcdonalds.com/corpmcd/investors.html "
+    "(Accessed: 12 June 2026).",
 
     "Peng, M. and Meyer, K. (2019) International Business. 3rd edn. "
     "Andover: Cengage EMEA.",
+
+    "Ritzer, G. (2019) The McDonaldization of Society. 9th edn. "
+    "Thousand Oaks, CA: SAGE Publications.",
+
+    "World Health Organization (2023) Obesity and Overweight [Fact sheet]. "
+    "Geneva: WHO. Available at: "
+    "https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight "
+    "(Accessed: 12 June 2026).",
 
     "Wright Forrester (2018) Industrial Dynamics. Eastford, CT: "
     "Martino Fine Books.",
@@ -616,9 +601,8 @@ refs = [
 for ref in refs:
     reference_entry(doc, ref)
 
-# ═══════════════════════════════════════════════
-#  SAVE
-# ═══════════════════════════════════════════════
+
+# ── save ─────────────────────────────────────────────────────────────────────
 
 doc.save("IBA_Individual_Report.docx")
 print("IBA_Individual_Report.docx saved successfully.")
